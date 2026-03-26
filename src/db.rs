@@ -1,5 +1,7 @@
 use anyhow::{Context, Result};
-use rusqlite::{Connection, params};
+use bytemuck::cast_slice;
+use rusqlite::{Connection, ffi::sqlite3_auto_extension, params};
+use sqlite_vec::sqlite3_vec_init;
 use std::path::Path;
 
 /// A single search result row combining chunk and session data.
@@ -21,9 +23,22 @@ pub struct Database {
 }
 
 impl Database {
+    /// Register the sqlite-vec extension so it is loaded for every new connection.
+    ///
+    /// This must be called before opening a connection.  It is safe to call
+    /// multiple times because SQLite deduplicates auto-extension entries.
+    fn register_vec_extension() {
+        unsafe {
+            sqlite3_auto_extension(Some(std::mem::transmute(
+                sqlite3_vec_init as *const (),
+            )));
+        }
+    }
+
     /// Open (or create) the database at the given filesystem path.
     /// Initializes schema, enables WAL mode, and sets a busy timeout.
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
+        Self::register_vec_extension();
         let conn = Connection::open(path).context("Failed to open SQLite database")?;
         let db = Self { conn };
         db.configure()?;
@@ -33,6 +48,7 @@ impl Database {
 
     /// Open an in-memory database — used in tests.
     pub fn open_in_memory() -> Result<Self> {
+        Self::register_vec_extension();
         let conn = Connection::open_in_memory().context("Failed to open in-memory SQLite database")?;
         let db = Self { conn };
         db.configure()?;
@@ -106,6 +122,15 @@ impl Database {
                 VALUES (new.id, new.question, new.answer);
             END;
         ").context("Failed to initialize schema")?;
+
+        // vec0 virtual table for approximate nearest-neighbour vector search.
+        // chunk_id is a foreign key to chunks.id (enforced by application code).
+        self.conn.execute_batch("
+            CREATE VIRTUAL TABLE IF NOT EXISTS chunks_vec USING vec0(
+                chunk_id INTEGER PRIMARY KEY,
+                embedding FLOAT[1024]
+            );
+        ").context("Failed to create chunks_vec virtual table")?;
 
         Ok(())
     }
@@ -261,6 +286,62 @@ impl Database {
             .context("Failed to execute recent_chunks query")?
             .collect::<Result<Vec<_>, _>>()
             .context("Failed to collect recent_chunks results")?;
+
+        Ok(rows)
+    }
+
+    // -----------------------------------------------------------------------
+    // Vector search operations
+    // -----------------------------------------------------------------------
+
+    /// Store a 1024-dim embedding for the given chunk.
+    ///
+    /// The embedding is passed as a BLOB (raw little-endian f32 bytes).
+    pub fn insert_embedding(&self, chunk_id: i64, embedding: &[f32]) -> Result<()> {
+        let blob: &[u8] = cast_slice(embedding);
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO chunks_vec (chunk_id, embedding) VALUES (?1, ?2)",
+                params![chunk_id, blob],
+            )
+            .context("Failed to insert embedding into chunks_vec")?;
+        Ok(())
+    }
+
+    /// Return the `limit` closest chunks to `query_embedding` using vec0 KNN search.
+    ///
+    /// Results are ordered by ascending distance (nearest first).
+    pub fn vec_search(&self, query_embedding: &[f32], limit: usize) -> Result<Vec<ChunkRow>> {
+        let blob: &[u8] = cast_slice(query_embedding);
+
+        let mut stmt = self.conn.prepare(
+            "SELECT c.id, c.session_id, s.project, s.scope,
+                    c.question, c.answer, c.timestamp,
+                    cv.distance
+             FROM chunks_vec cv
+             JOIN chunks   c ON cv.chunk_id = c.id
+             JOIN sessions s ON c.session_id = s.session_id
+             WHERE cv.embedding MATCH ?1 AND cv.k = ?2
+             ORDER BY cv.distance",
+        )
+        .context("Failed to prepare vec_search statement")?;
+
+        let rows = stmt
+            .query_map(params![blob, limit as i64], |row| {
+                Ok(ChunkRow {
+                    chunk_id: row.get(0)?,
+                    session_id: row.get(1)?,
+                    project: row.get(2)?,
+                    scope: row.get(3)?,
+                    question: row.get(4)?,
+                    answer: row.get(5)?,
+                    timestamp: row.get(6)?,
+                    rank: row.get(7)?,
+                })
+            })
+            .context("Failed to execute vec_search")?
+            .collect::<Result<Vec<_>, _>>()
+            .context("Failed to collect vec_search results")?;
 
         Ok(rows)
     }

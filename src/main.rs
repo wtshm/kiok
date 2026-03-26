@@ -4,6 +4,7 @@ use clap::{Parser, Subcommand};
 mod chunk;
 mod cmd;
 mod db;
+mod embed;
 mod filter;
 mod search;
 

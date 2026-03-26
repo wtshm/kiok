@@ -6,6 +6,7 @@ mod cmd;
 mod db;
 mod embed;
 mod filter;
+mod policy;
 mod search;
 
 #[derive(Parser)]

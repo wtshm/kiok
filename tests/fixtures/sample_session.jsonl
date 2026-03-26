@@ -1,0 +1,8 @@
+{"type":"queue-operation","operation":"enqueue","timestamp":"2026-03-26T00:00:00Z","sessionId":"test-session-1"}
+{"type":"progress","data":{"type":"hook_progress","hookEvent":"SessionStart"},"timestamp":"2026-03-26T00:00:01Z","sessionId":"test-session-1","uuid":"p1","cwd":"/tmp/my-project"}
+{"type":"user","message":{"role":"user","content":"Dockerの設定方法を教えて"},"timestamp":"2026-03-26T00:00:02Z","sessionId":"test-session-1","uuid":"u1","parentUuid":"p1","cwd":"/tmp/my-project"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"docker-compose.ymlを使ってサービスを定義します。"}]},"timestamp":"2026-03-26T00:00:03Z","sessionId":"test-session-1","uuid":"a1","cwd":"/tmp/my-project"}
+{"type":"user","message":{"role":"user","content":"ビルドキャッシュが効かない"},"timestamp":"2026-03-26T00:00:04Z","sessionId":"test-session-1","uuid":"u2","cwd":"/tmp/my-project"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"thinking","thinking":"Let me think about this..."},{"type":"text","text":"BuildKitのインラインキャッシュを使ってください。"},{"type":"tool_use","id":"t1","name":"Read","input":{"path":"/tmp/test"}}]},"timestamp":"2026-03-26T00:00:05Z","sessionId":"test-session-1","uuid":"a2","cwd":"/tmp/my-project"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_result","tool_use_id":"t1","content":"file content here"}]},"timestamp":"2026-03-26T00:00:06Z","sessionId":"test-session-1","uuid":"a3","cwd":"/tmp/my-project"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"ファイルの内容を確認しました。<system-reminder>This is hidden</system-reminder>設定を変更してください。"}]},"timestamp":"2026-03-26T00:00:07Z","sessionId":"test-session-1","uuid":"a4","cwd":"/tmp/my-project"}

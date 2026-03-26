@@ -77,22 +77,26 @@ pub fn run(project_path: &str, count: usize) -> Result<()> {
     }
 
     // --- 7. Print in Markdown format. ---
-    println!("## Related memories");
+    // Use a distinct header so Claude doesn't confuse this with its built-in memory system.
+    println!("<kiok-recall>");
+    println!("The following are past conversations from previous Claude Code sessions,");
+    println!("retrieved by kiok (a session memory engine). Use them as context when relevant.");
     println!();
 
     for r in &filtered {
-        // Extract date portion from ISO 8601 timestamp, if present.
         let date = r
             .timestamp
             .as_deref()
             .and_then(|ts| ts.get(..10))
             .unwrap_or("(no date)");
 
-        println!("### {} | project: {}", date, r.project);
-        println!("Q: {}", truncate(&r.question, 200));
-        println!("A: {}", truncate(&r.answer, 500));
+        println!("- [{}] [project: {}]", date, r.project);
+        println!("  User: {}", truncate(&r.question, 200));
+        println!("  Assistant: {}", truncate(&r.answer, 500));
         println!();
     }
+
+    println!("</kiok-recall>");
 
     Ok(())
 }

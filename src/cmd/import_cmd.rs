@@ -1,0 +1,213 @@
+use anyhow::{Context, Result};
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use crate::chunk;
+use crate::db::Database;
+use super::save::{data_dir, db_path};
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+/// Run the import command: scan ~/.claude/projects/ and insert all sessions
+/// that are not yet in the database.
+pub fn run() -> Result<()> {
+    let home = dirs::home_dir().context("Could not determine home directory")?;
+    let projects_dir = home.join(".claude").join("projects");
+
+    if !projects_dir.exists() {
+        eprintln!("import: no Claude projects directory found at {}", projects_dir.display());
+        return Ok(());
+    }
+
+    // Open / create the database.
+    let data = data_dir()?;
+    fs::create_dir_all(&data)
+        .with_context(|| format!("Could not create data directory {}", data.display()))?;
+    let db = Database::open(db_path()?)?;
+
+    let mut total_chunks = 0usize;
+    let mut total_sessions = 0usize;
+    let mut skipped = 0usize;
+    let mut errors = 0usize;
+
+    // Iterate over project subdirectories.
+    let project_entries = fs::read_dir(&projects_dir)
+        .with_context(|| format!("Could not read {}", projects_dir.display()))?;
+
+    for entry in project_entries {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(e) => {
+                eprintln!("import: error reading directory entry: {}", e);
+                errors += 1;
+                continue;
+            }
+        };
+
+        let project_dir = entry.path();
+        if !project_dir.is_dir() {
+            continue;
+        }
+
+        // Decode the human-readable project name from the encoded directory name.
+        let encoded_name = project_dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("")
+            .to_owned();
+        let project = decode_project_name(&encoded_name);
+
+        // Find all JSONL files (including subagent subdirs).
+        let jsonl_files = find_jsonl_files(&project_dir);
+
+        for jsonl_path in jsonl_files {
+            let session_id = match jsonl_path
+                .file_stem()
+                .and_then(|s| s.to_str())
+            {
+                Some(s) => s.to_owned(),
+                None => {
+                    eprintln!("import: could not extract session_id from {}", jsonl_path.display());
+                    errors += 1;
+                    continue;
+                }
+            };
+
+            // Skip already-imported sessions.
+            match db.session_exists(&session_id) {
+                Ok(true) => {
+                    skipped += 1;
+                    continue;
+                }
+                Ok(false) => {}
+                Err(e) => {
+                    eprintln!("import: DB error for session {}: {}", session_id, e);
+                    errors += 1;
+                    continue;
+                }
+            }
+
+            // Parse + chunk the session.
+            let content = match fs::read_to_string(&jsonl_path) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("import: could not read {}: {}", jsonl_path.display(), e);
+                    errors += 1;
+                    continue;
+                }
+            };
+
+            let chunks = match chunk::parse_session(&content) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("import: parse error for {}: {}", jsonl_path.display(), e);
+                    errors += 1;
+                    continue;
+                }
+            };
+
+            if chunks.is_empty() {
+                // Still record the session so we don't revisit it.
+                let _ = db.insert_session(&session_id, &project, "global", None);
+                total_sessions += 1;
+                continue;
+            }
+
+            // Insert session + chunks.
+            if let Err(e) = db.insert_session(&session_id, &project, "global", None) {
+                eprintln!("import: failed to insert session {}: {}", session_id, e);
+                errors += 1;
+                continue;
+            }
+
+            let mut inserted_count = 0usize;
+            for c in &chunks {
+                match db.insert_chunk(
+                    &session_id,
+                    c.uuid.as_deref(),
+                    &c.question,
+                    &c.answer,
+                    c.timestamp.as_deref(),
+                    None,
+                ) {
+                    Ok(Some(_)) => inserted_count += 1,
+                    Ok(None) => {}
+                    Err(e) => {
+                        eprintln!("import: failed to insert chunk: {}", e);
+                        errors += 1;
+                    }
+                }
+            }
+
+            total_chunks += inserted_count;
+            total_sessions += 1;
+        }
+    }
+
+    println!(
+        "Imported {} chunks from {} sessions ({} skipped, {} errors)",
+        total_chunks, total_sessions, skipped, errors
+    );
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Helper functions
+// ---------------------------------------------------------------------------
+
+/// Decode a Claude Code encoded project directory name back to the project name.
+///
+/// Claude Code encodes paths by replacing non-alphanumeric characters with `-`.
+/// For example, `-Users-kenta-workspace-myapp` → `"myapp"`.
+pub fn decode_project_name(encoded: &str) -> String {
+    // Take the last segment when split by `-`.
+    encoded
+        .split('-')
+        .filter(|s| !s.is_empty())
+        .last()
+        .unwrap_or(encoded)
+        .to_owned()
+}
+
+/// Recursively find all `.jsonl` files under `dir`.
+pub fn find_jsonl_files(dir: &Path) -> Vec<PathBuf> {
+    let mut result = Vec::new();
+    _find_jsonl_files(dir, &mut result);
+    result
+}
+
+fn _find_jsonl_files(dir: &Path, result: &mut Vec<PathBuf>) {
+    let entries = match fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            _find_jsonl_files(&path, result);
+        } else if path.extension().and_then(|e| e.to_str()) == Some("jsonl") {
+            result.push(path);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_decode_project_name() {
+        assert_eq!(decode_project_name("-Users-kenta-workspace-myapp"), "myapp");
+        assert_eq!(decode_project_name("-Users-kenta-workspace-my-app"), "app");
+        assert_eq!(decode_project_name("simple"), "simple");
+        assert_eq!(decode_project_name("-a-b-c"), "c");
+    }
+}

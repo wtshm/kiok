@@ -1,8 +1,11 @@
 use anyhow::Result;
 
+pub mod import_cmd;
 pub mod recall;
 pub mod save;
 pub mod search_cmd;
+pub mod setup;
+pub mod stats;
 
 pub fn run(command: crate::Commands) -> Result<()> {
     match command {
@@ -16,16 +19,13 @@ pub fn run(command: crate::Commands) -> Result<()> {
             search_cmd::run(&query, project.as_deref(), count)
         }
         crate::Commands::Import => {
-            eprintln!("import");
-            Ok(())
+            import_cmd::run()
         }
         crate::Commands::Stats => {
-            eprintln!("stats");
-            Ok(())
+            stats::run()
         }
         crate::Commands::Setup => {
-            eprintln!("setup");
-            Ok(())
+            setup::run()
         }
     }
 }

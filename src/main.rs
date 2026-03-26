@@ -1,13 +1,14 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 
-mod chunk;
+// Re-use the public modules from the library crate.
+use kiok::chunk;
+use kiok::db;
+use kiok::embed;
+use kiok::policy;
+use kiok::search;
+
 mod cmd;
-mod db;
-mod embed;
-mod filter;
-mod policy;
-mod search;
 
 #[derive(Parser)]
 #[command(name = "kiok", about = "Memory engine for Claude Code")]

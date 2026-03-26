@@ -1,9 +1,11 @@
 use anyhow::Result;
 
 use crate::db::Database;
+use crate::embed::EmbeddingBackend;
+use crate::embed::onnx::OnnxBackend;
 use crate::policy;
 use crate::search::{self, SearchConfig};
-use super::save::{db_path, project_name};
+use super::save::{db_path, model_onnx_path, project_name};
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -46,12 +48,27 @@ pub fn run(project_path: &str, count: usize) -> Result<()> {
     // --- 4. Load policy scope. ---
     let viewer_scope = policy::load_scope(project_path)?;
 
-    // --- 5. Run keyword search with count*2 candidates. ---
+    // --- 5. Run hybrid or keyword search depending on model availability. ---
     let config = SearchConfig {
         count: count * 2,
         ..SearchConfig::default()
     };
-    let results = search::keyword_search(&db, &query, &config)?;
+
+    let model_path = model_onnx_path()?;
+    let results = if model_path.exists() {
+        // Try to embed the query and use hybrid search.
+        match embed_query(&query, &model_path.parent().unwrap()) {
+            Ok(embedding) => {
+                search::hybrid_search(&db, &query, Some(&embedding), &config)?
+            }
+            Err(e) => {
+                eprintln!("recall: embedding failed, falling back to keyword search: {}", e);
+                search::keyword_search(&db, &query, &config)?
+            }
+        }
+    } else {
+        search::keyword_search(&db, &query, &config)?
+    };
 
     // --- 6. Filter by visibility policy. ---
     let filtered: Vec<_> = results
@@ -83,6 +100,19 @@ pub fn run(project_path: &str, count: usize) -> Result<()> {
     }
 
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Embedding helper
+// ---------------------------------------------------------------------------
+
+/// Embed a single query string using the ONNX backend.
+fn embed_query(query: &str, model_dir: &std::path::Path) -> anyhow::Result<Vec<f32>> {
+    let backend = OnnxBackend::load(model_dir)?;
+    let mut embeddings = backend.embed(&[query])?;
+    embeddings
+        .pop()
+        .ok_or_else(|| anyhow::anyhow!("embedding returned empty result"))
 }
 
 // ---------------------------------------------------------------------------

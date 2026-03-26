@@ -4,6 +4,8 @@ use std::path::PathBuf;
 
 use crate::chunk;
 use crate::db::Database;
+use crate::embed::EmbeddingBackend;
+use crate::embed::onnx::OnnxBackend;
 
 // ---------------------------------------------------------------------------
 // Path helpers
@@ -94,6 +96,8 @@ pub fn run(project_path: &str) -> Result<()> {
     db.insert_session(&session_id, &project, "global", None)?;
 
     let mut saved = 0usize;
+    let mut chunk_ids: Vec<Option<i64>> = Vec::with_capacity(chunks.len());
+
     for c in &chunks {
         let inserted = db.insert_chunk(
             &session_id,
@@ -106,9 +110,29 @@ pub fn run(project_path: &str) -> Result<()> {
         if inserted.is_some() {
             saved += 1;
         }
+        chunk_ids.push(inserted);
     }
 
-    // --- 7. Print summary. ---
+    // --- 7. Embed chunks if the ONNX model is available. ---
+    let model_path = model_onnx_path()?;
+    if model_path.exists() {
+        match embed_and_store(&db, &chunks, &chunk_ids, &model_path.parent().unwrap()) {
+            Ok(count) => {
+                if count > 0 {
+                    eprintln!("save: embedded {} chunks", count);
+                }
+            }
+            Err(e) => {
+                eprintln!("save: embedding failed (continuing without embeddings): {}", e);
+            }
+        }
+    } else {
+        eprintln!(
+            "save: ONNX model not found — run `kiok setup` to enable semantic search"
+        );
+    }
+
+    // --- 8. Print summary. ---
     eprintln!(
         "save: session={} project={} chunks={}/{}",
         session_id,
@@ -118,6 +142,59 @@ pub fn run(project_path: &str) -> Result<()> {
     );
 
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Path helpers for the ONNX model
+// ---------------------------------------------------------------------------
+
+/// Returns `~/.kiok/models/ruri-v3-310m/model.onnx`.
+pub fn model_onnx_path() -> Result<PathBuf> {
+    let home = dirs::home_dir().context("Could not determine home directory")?;
+    Ok(home
+        .join(".kiok")
+        .join("models")
+        .join("ruri-v3-310m")
+        .join("model.onnx"))
+}
+
+// ---------------------------------------------------------------------------
+// Embedding helper
+// ---------------------------------------------------------------------------
+
+/// Load the ONNX backend and insert embeddings for all newly-inserted chunks.
+///
+/// Returns the number of embeddings successfully stored.
+fn embed_and_store(
+    db: &Database,
+    chunks: &[crate::chunk::Chunk],
+    chunk_ids: &[Option<i64>],
+    model_dir: &std::path::Path,
+) -> Result<usize> {
+    let backend = OnnxBackend::load(model_dir)?;
+
+    // Gather texts + their corresponding chunk IDs for chunks that were
+    // actually inserted (i.e., chunk_ids[i] is Some).
+    let pairs: Vec<(i64, &str)> = chunks
+        .iter()
+        .zip(chunk_ids.iter())
+        .filter_map(|(c, id)| id.map(|i| (i, c.question.as_str())))
+        .collect();
+
+    if pairs.is_empty() {
+        return Ok(0);
+    }
+
+    let texts: Vec<&str> = pairs.iter().map(|(_, t)| *t).collect();
+    let embeddings = backend.embed(&texts)?;
+
+    let mut count = 0usize;
+    for ((chunk_id, _), embedding) in pairs.iter().zip(embeddings.iter()) {
+        db.insert_embedding(*chunk_id, embedding)?;
+        count += 1;
+    }
+
+    Ok(count)
 }
 
 // ---------------------------------------------------------------------------

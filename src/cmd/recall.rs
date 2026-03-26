@@ -1,11 +1,9 @@
 use anyhow::Result;
 
 use crate::db::Database;
-use crate::embed::EmbeddingBackend;
-use crate::embed::onnx::OnnxBackend;
 use crate::policy;
 use crate::search::{self, SearchConfig};
-use super::save::{db_path, model_onnx_path, project_name};
+use super::save::{db_path, project_name};
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -32,43 +30,40 @@ pub fn run(project_path: &str, count: usize) -> Result<()> {
     // --- 2. Resolve project name. ---
     let project = project_name(project_path);
 
-    // --- 3. Build query from the 3 most-recent chunks. ---
+    // --- 3. Build queries from the 3 most-recent chunks. ---
     let recent = db.recent_chunks(&project, 3)?;
     if recent.is_empty() {
         return Ok(());
     }
 
-    let raw_query: String = recent
-        .iter()
-        .map(|c| c.question.as_str())
-        .collect::<Vec<_>>()
-        .join(" ");
-    let query = truncate(&raw_query, 512);
-
     // --- 4. Load policy scope. ---
     let viewer_scope = policy::load_scope(project_path)?;
 
-    // --- 5. Run hybrid or keyword search depending on model availability. ---
+    // --- 5. Search each recent question separately and merge results. ---
+    // FTS5 trigram wraps queries as phrases, so a long concatenated query
+    // would require an exact phrase match and return nothing.
+    // Instead, search each question individually and deduplicate by chunk_id.
     let config = SearchConfig {
         count: count * 2,
         ..SearchConfig::default()
     };
 
-    let model_path = model_onnx_path()?;
-    let results = if model_path.exists() {
-        // Try to embed the query and use hybrid search.
-        match embed_query(&query, model_path.parent().unwrap()) {
-            Ok(embedding) => {
-                search::hybrid_search(&db, &query, Some(&embedding), &config)?
-            }
-            Err(e) => {
-                eprintln!("recall: embedding failed, falling back to keyword search: {}", e);
-                search::keyword_search(&db, &query, &config)?
+    let mut seen = std::collections::HashSet::new();
+    let mut results = Vec::new();
+    for chunk in &recent {
+        // Use a short substring of each question (trigram works best with short queries)
+        let q: String = chunk.question.chars().take(80).collect();
+        if q.trim().is_empty() {
+            continue;
+        }
+        if let Ok(hits) = search::keyword_search(&db, &q, &config) {
+            for hit in hits {
+                if seen.insert(hit.chunk_id) {
+                    results.push(hit);
+                }
             }
         }
-    } else {
-        search::keyword_search(&db, &query, &config)?
-    };
+    }
 
     // --- 6. Filter by visibility policy. ---
     let filtered: Vec<_> = results
@@ -100,19 +95,6 @@ pub fn run(project_path: &str, count: usize) -> Result<()> {
     }
 
     Ok(())
-}
-
-// ---------------------------------------------------------------------------
-// Embedding helper
-// ---------------------------------------------------------------------------
-
-/// Embed a single query string using the ONNX backend.
-fn embed_query(query: &str, model_dir: &std::path::Path) -> anyhow::Result<Vec<f32>> {
-    let backend = OnnxBackend::load(model_dir)?;
-    let mut embeddings = backend.embed(&[query])?;
-    embeddings
-        .pop()
-        .ok_or_else(|| anyhow::anyhow!("embedding returned empty result"))
 }
 
 // ---------------------------------------------------------------------------

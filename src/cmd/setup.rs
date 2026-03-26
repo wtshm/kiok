@@ -109,31 +109,34 @@ async fn download_model_files(model_dir: &std::path::Path) -> Result<()> {
 /// Print the hook configuration JSON that the user should add to
 /// ~/.claude/settings.json.
 fn print_hook_config() -> Result<()> {
-    let kiok_bin = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.to_str().map(str::to_owned))
-        .unwrap_or_else(|| "kiok".to_owned());
-
     let hook_config = serde_json::json!({
         "hooks": {
-            "PreToolUse": [
+            "SessionStart": [
                 {
-                    "matcher": ".*",
                     "hooks": [
                         {
                             "type": "command",
-                            "command": format!("{} recall --project \"${{CLAUDE_PROJECT_DIR}}\"", kiok_bin)
+                            "command": "kiok recall --project $PWD"
                         }
                     ]
                 }
             ],
-            "PostToolUse": [
+            "SessionEnd": [
                 {
-                    "matcher": ".*",
                     "hooks": [
                         {
                             "type": "command",
-                            "command": format!("{} save --project \"${{CLAUDE_PROJECT_DIR}}\"", kiok_bin)
+                            "command": "kiok save --project $PWD &"
+                        }
+                    ]
+                }
+            ],
+            "PreCompact": [
+                {
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": "kiok save --project $PWD"
                         }
                     ]
                 }

@@ -122,12 +122,12 @@ impl EmbeddingBackend for OnnxBackend {
 
         if ndim == 3 {
             // 3D: [batch, seq_len, hidden_dim]
-            for i in 0..batch_size {
+            for (i, encoding) in encodings.iter().enumerate().take(batch_size) {
                 let mut sum = vec![0.0f32; hidden_dim];
                 let mut count = 0usize;
 
                 for j in 0..seq_len {
-                    let mask_val = encodings[i].get_attention_mask().get(j).copied().unwrap_or(0);
+                    let mask_val = encoding.get_attention_mask().get(j).copied().unwrap_or(0);
 
                     if mask_val != 0 {
                         let base = (i * seq_len + j) * hidden_dim;
@@ -162,7 +162,7 @@ impl EmbeddingBackend for OnnxBackend {
 }
 
 /// Normalize a vector in-place to unit L2 norm.
-fn l2_normalize(v: &mut Vec<f32>) {
+fn l2_normalize(v: &mut [f32]) {
     let norm = v.iter().map(|&x| x * x).sum::<f32>().sqrt();
     if norm > 1e-9 {
         for x in v.iter_mut() {

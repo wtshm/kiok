@@ -57,7 +57,7 @@ pub fn run(project_path: &str, count: usize) -> Result<()> {
     let model_path = model_onnx_path()?;
     let results = if model_path.exists() {
         // Try to embed the query and use hybrid search.
-        match embed_query(&query, &model_path.parent().unwrap()) {
+        match embed_query(&query, model_path.parent().unwrap()) {
             Ok(embedding) => {
                 search::hybrid_search(&db, &query, Some(&embedding), &config)?
             }
@@ -119,14 +119,4 @@ fn embed_query(query: &str, model_dir: &std::path::Path) -> anyhow::Result<Vec<f
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Truncate `s` to at most `max_chars` Unicode scalar values, appending
-/// `"..."` if truncated.
-fn truncate(s: &str, max_chars: usize) -> String {
-    let mut chars = s.chars();
-    let collected: String = chars.by_ref().take(max_chars).collect();
-    if chars.next().is_some() {
-        format!("{}...", collected)
-    } else {
-        collected
-    }
-}
+use crate::cmd::search_cmd::truncate;

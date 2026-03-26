@@ -6,6 +6,7 @@ use crate::chunk;
 use crate::db::Database;
 use crate::embed::EmbeddingBackend;
 use crate::embed::onnx::OnnxBackend;
+use crate::policy;
 
 // ---------------------------------------------------------------------------
 // Path helpers
@@ -73,13 +74,7 @@ pub fn run(project_path: &str) -> Result<()> {
         .with_context(|| format!("Could not create data directory {}", data.display()))?;
     let db = Database::open(db_path()?)?;
 
-    // --- 4. Skip if already saved. ---
-    if db.session_exists(&session_id)? {
-        eprintln!("save: session {} already saved — skipping", session_id);
-        return Ok(());
-    }
-
-    // --- 5. Parse + chunk the session. ---
+    // --- 4. Parse + chunk the session. ---
     let content = fs::read_to_string(&jsonl_path)
         .with_context(|| format!("Could not read {}", jsonl_path.display()))?;
 
@@ -91,9 +86,17 @@ pub fn run(project_path: &str) -> Result<()> {
         return Ok(());
     }
 
-    // --- 6. Insert session + chunks. ---
+    // --- 5. Insert session (relies on INSERT OR IGNORE for idempotency). ---
+    // Load the memory policy scope for this project so it is stored correctly.
+    let scope = policy::load_scope(project_path).unwrap_or_default();
+    let scope_str = scope.as_str();
     let project = project_name(project_path);
-    db.insert_session(&session_id, &project, "global", None)?;
+    let started_at: Option<&str> = None;
+    let inserted = db.insert_session(&session_id, &project, scope_str, started_at)?;
+    if !inserted {
+        eprintln!("Session {} already saved, skipping", session_id);
+        return Ok(());
+    }
 
     let mut saved = 0usize;
     let mut chunk_ids: Vec<Option<i64>> = Vec::with_capacity(chunks.len());
@@ -116,7 +119,7 @@ pub fn run(project_path: &str) -> Result<()> {
     // --- 7. Embed chunks if the ONNX model is available. ---
     let model_path = model_onnx_path()?;
     if model_path.exists() {
-        match embed_and_store(&db, &chunks, &chunk_ids, &model_path.parent().unwrap()) {
+        match embed_and_store(&db, &chunks, &chunk_ids, model_path.parent().unwrap()) {
             Ok(count) => {
                 if count > 0 {
                     eprintln!("save: embedded {} chunks", count);
@@ -173,23 +176,31 @@ fn embed_and_store(
 ) -> Result<usize> {
     let backend = OnnxBackend::load(model_dir)?;
 
-    // Gather texts + their corresponding chunk IDs for chunks that were
+    // Gather IDs + concatenated question+answer for chunks that were
     // actually inserted (i.e., chunk_ids[i] is Some).
-    let pairs: Vec<(i64, &str)> = chunks
+    let chunks_with_ids: Vec<(&crate::chunk::Chunk, Option<i64>)> =
+        chunks.iter().zip(chunk_ids.iter().copied()).collect();
+
+    let texts: Vec<String> = chunks_with_ids
         .iter()
-        .zip(chunk_ids.iter())
-        .filter_map(|(c, id)| id.map(|i| (i, c.question.as_str())))
+        .filter_map(|(c, id)| id.map(|i| (i, format!("{} {}", c.question, c.answer))))
+        .map(|(_, t)| t)
         .collect();
 
-    if pairs.is_empty() {
+    let ids: Vec<i64> = chunks_with_ids
+        .iter()
+        .filter_map(|(_, id)| *id)
+        .collect();
+
+    if ids.is_empty() {
         return Ok(0);
     }
 
-    let texts: Vec<&str> = pairs.iter().map(|(_, t)| *t).collect();
-    let embeddings = backend.embed(&texts)?;
+    let text_refs: Vec<&str> = texts.iter().map(String::as_str).collect();
+    let embeddings = backend.embed(&text_refs)?;
 
     let mut count = 0usize;
-    for ((chunk_id, _), embedding) in pairs.iter().zip(embeddings.iter()) {
+    for (chunk_id, embedding) in ids.iter().zip(embeddings.iter()) {
         db.insert_embedding(*chunk_id, embedding)?;
         count += 1;
     }

@@ -9,7 +9,9 @@ use std::path::Path;
 /// Memory visibility scope for a project or chunk.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum Scope {
+    #[default]
     Global,
     Project,
     Isolated,
@@ -26,11 +28,6 @@ impl Scope {
     }
 }
 
-impl Default for Scope {
-    fn default() -> Self {
-        Scope::Global
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Internal deserialisation helper

@@ -71,14 +71,13 @@ pub fn fuse(
     let mut scored: Vec<ScoredResult> = map
         .into_values()
         .map(|mut r| {
-            if let Some(ts) = &r.timestamp {
-                if let Ok(parsed) = ts.parse::<DateTime<Utc>>() {
+            if let Some(ts) = &r.timestamp
+                && let Ok(parsed) = ts.parse::<DateTime<Utc>>() {
                     let age_days = (now - parsed).num_seconds() as f64 / 86_400.0;
                     let age_days = age_days.max(0.0);
                     r.score *= (-lambda * age_days).exp();
                 }
                 // If timestamp is present but unparseable, leave score as-is.
-            }
             // If timestamp is None, no decay — leave score as-is.
             r
         })

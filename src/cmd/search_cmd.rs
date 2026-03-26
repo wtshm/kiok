@@ -54,7 +54,7 @@ pub fn run(query: &str, project: Option<&str>, count: usize) -> Result<()> {
 
 /// Truncate `s` to at most `max_chars` Unicode scalar values, appending
 /// `"..."` if the string was truncated.
-pub fn truncate(s: &str, max_chars: usize) -> String {
+pub(crate) fn truncate(s: &str, max_chars: usize) -> String {
     let mut chars = s.chars();
     let collected: String = chars.by_ref().take(max_chars).collect();
     if chars.next().is_some() {

@@ -166,8 +166,8 @@ fn pair_into_chunks(messages: Vec<Message>) -> Vec<Chunk> {
     for (i, msg) in messages.iter().enumerate() {
         if msg.role == "user" {
             // Flush the previous Q&A pair if there is one.
-            if let Some(qi) = pending_question {
-                if !answer_parts.is_empty() {
+            if let Some(qi) = pending_question
+                && !answer_parts.is_empty() {
                     let qm = &messages[qi];
                     let (uuid, timestamp, session_id) =
                         answer_meta.take().unwrap_or((None, None, qm.session_id.clone()));
@@ -180,10 +180,9 @@ fn pair_into_chunks(messages: Vec<Message>) -> Vec<Chunk> {
                     });
                     answer_parts.clear();
                 }
-            }
             pending_question = Some(i);
-        } else if msg.role == "assistant" {
-            if pending_question.is_some() {
+        } else if msg.role == "assistant"
+            && pending_question.is_some() {
                 // Record metadata from the first assistant message in this group.
                 if answer_parts.is_empty() {
                     answer_meta = Some((
@@ -196,12 +195,11 @@ fn pair_into_chunks(messages: Vec<Message>) -> Vec<Chunk> {
                     answer_parts.push(msg.content.clone());
                 }
             }
-        }
     }
 
     // Flush the last pending Q&A pair.
-    if let Some(qi) = pending_question {
-        if !answer_parts.is_empty() {
+    if let Some(qi) = pending_question
+        && !answer_parts.is_empty() {
             let qm = &messages[qi];
             let (uuid, timestamp, session_id) =
                 answer_meta.take().unwrap_or((None, None, qm.session_id.clone()));
@@ -213,7 +211,6 @@ fn pair_into_chunks(messages: Vec<Message>) -> Vec<Chunk> {
                 timestamp,
             });
         }
-    }
 
     chunks
 }

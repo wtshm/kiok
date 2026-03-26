@@ -1,5 +1,6 @@
 use anyhow::Result;
 
+pub mod embed;
 pub mod import_cmd;
 pub mod recall;
 pub mod save;
@@ -17,6 +18,9 @@ pub fn run(command: crate::Commands) -> Result<()> {
         }
         crate::Commands::Search { query, project, count } => {
             search_cmd::run(&query, project.as_deref(), count)
+        }
+        crate::Commands::Embed => {
+            embed::run()
         }
         crate::Commands::Import => {
             import_cmd::run()

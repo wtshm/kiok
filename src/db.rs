@@ -213,6 +213,39 @@ impl Database {
         Ok(Some(self.conn.last_insert_rowid()))
     }
 
+    /// Return chunks that have no corresponding embedding yet, up to `limit`.
+    pub fn chunks_without_embeddings(&self, limit: usize) -> Result<Vec<ChunkRow>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT c.id, c.session_id, s.project, s.scope,
+                    c.question, c.answer, c.timestamp, 0.0 as rank
+             FROM chunks c
+             JOIN sessions s ON s.session_id = c.session_id
+             LEFT JOIN chunks_vec v ON v.chunk_id = c.id
+             WHERE v.chunk_id IS NULL
+             ORDER BY c.id DESC
+             LIMIT ?1",
+        )?;
+
+        let rows = stmt.query_map(params![limit as i64], |row| {
+            Ok(ChunkRow {
+                chunk_id: row.get(0)?,
+                session_id: row.get(1)?,
+                project: row.get(2)?,
+                scope: row.get(3)?,
+                question: row.get(4)?,
+                answer: row.get(5)?,
+                timestamp: row.get(6)?,
+                rank: row.get(7)?,
+            })
+        })?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
+    }
+
     // -----------------------------------------------------------------------
     // Search / query operations
     // -----------------------------------------------------------------------

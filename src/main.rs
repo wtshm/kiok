@@ -45,6 +45,8 @@ enum Commands {
         #[arg(long, default_value = "10")]
         count: usize,
     },
+    /// Embed chunks that don't have embeddings yet
+    Embed,
     /// Import existing Claude Code sessions
     Import,
     /// Show database statistics

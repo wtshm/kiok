@@ -116,23 +116,16 @@ pub fn run(project_path: &str) -> Result<()> {
         chunk_ids.push(inserted);
     }
 
-    // --- 7. Embed chunks if the ONNX model is available. ---
-    let model_path = model_onnx_path()?;
-    if model_path.exists() {
-        match embed_and_store(&db, &chunks, &chunk_ids, model_path.parent().unwrap()) {
-            Ok(count) => {
-                if count > 0 {
-                    eprintln!("save: embedded {} chunks", count);
-                }
-            }
-            Err(e) => {
-                eprintln!("save: embedding failed (continuing without embeddings): {}", e);
-            }
-        }
-    } else {
-        eprintln!(
-            "save: ONNX model not found — run `kiok setup` to enable semantic search"
-        );
+    // --- 7. Spawn background embed process. ---
+    // Embedding loads a 1.2GB ONNX model and is too slow to run inline.
+    // Spawn a detached process so save returns immediately.
+    if let Ok(kiok_bin) = std::env::current_exe() {
+        let _ = std::process::Command::new(kiok_bin)
+            .arg("embed")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn();
     }
 
     // --- 8. Print summary. ---

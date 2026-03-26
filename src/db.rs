@@ -1,0 +1,419 @@
+use anyhow::{Context, Result};
+use rusqlite::{Connection, params};
+use std::path::Path;
+
+/// A single search result row combining chunk and session data.
+#[derive(Debug, Clone)]
+pub struct ChunkRow {
+    pub chunk_id: i64,
+    pub session_id: String,
+    pub project: String,
+    pub scope: String,
+    pub question: String,
+    pub answer: String,
+    pub timestamp: Option<String>,
+    pub rank: f64,
+}
+
+/// Wrapper around a SQLite connection providing all kiok database operations.
+pub struct Database {
+    conn: Connection,
+}
+
+impl Database {
+    /// Open (or create) the database at the given filesystem path.
+    /// Initializes schema, enables WAL mode, and sets a busy timeout.
+    pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
+        let conn = Connection::open(path).context("Failed to open SQLite database")?;
+        let db = Self { conn };
+        db.configure()?;
+        db.init_schema()?;
+        Ok(db)
+    }
+
+    /// Open an in-memory database — used in tests.
+    pub fn open_in_memory() -> Result<Self> {
+        let conn = Connection::open_in_memory().context("Failed to open in-memory SQLite database")?;
+        let db = Self { conn };
+        db.configure()?;
+        db.init_schema()?;
+        Ok(db)
+    }
+
+    /// Apply connection-level pragmas (WAL mode, busy timeout).
+    fn configure(&self) -> Result<()> {
+        self.conn.execute_batch(
+            "PRAGMA journal_mode = WAL;
+             PRAGMA busy_timeout = 5000;
+             PRAGMA foreign_keys = ON;",
+        )
+        .context("Failed to configure SQLite pragmas")?;
+        Ok(())
+    }
+
+    /// Create all tables, indexes, and FTS5 sync triggers if they do not exist.
+    pub fn init_schema(&self) -> Result<()> {
+        self.conn.execute_batch("
+            CREATE TABLE IF NOT EXISTS sessions (
+                session_id  TEXT PRIMARY KEY,
+                project     TEXT NOT NULL,
+                scope       TEXT NOT NULL DEFAULT 'global',
+                started_at  TEXT,
+                imported_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS chunks (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id  TEXT NOT NULL REFERENCES sessions(session_id),
+                uuid        TEXT,
+                question    TEXT NOT NULL,
+                answer      TEXT NOT NULL,
+                timestamp   TEXT,
+                token_count INTEGER
+            );
+
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_chunks_uuid
+                ON chunks(uuid) WHERE uuid IS NOT NULL;
+
+            CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
+                question,
+                answer,
+                content_rowid='id',
+                content='chunks',
+                tokenize='trigram'
+            );
+
+            -- Insert trigger: keep FTS in sync when a chunk is added.
+            CREATE TRIGGER IF NOT EXISTS chunks_ai
+            AFTER INSERT ON chunks BEGIN
+                INSERT INTO chunks_fts(rowid, question, answer)
+                VALUES (new.id, new.question, new.answer);
+            END;
+
+            -- Delete trigger: remove FTS entry when a chunk is deleted.
+            CREATE TRIGGER IF NOT EXISTS chunks_ad
+            AFTER DELETE ON chunks BEGIN
+                INSERT INTO chunks_fts(chunks_fts, rowid, question, answer)
+                VALUES ('delete', old.id, old.question, old.answer);
+            END;
+
+            -- Update trigger: replace FTS entry when a chunk is updated.
+            CREATE TRIGGER IF NOT EXISTS chunks_au
+            AFTER UPDATE ON chunks BEGIN
+                INSERT INTO chunks_fts(chunks_fts, rowid, question, answer)
+                VALUES ('delete', old.id, old.question, old.answer);
+                INSERT INTO chunks_fts(rowid, question, answer)
+                VALUES (new.id, new.question, new.answer);
+            END;
+        ").context("Failed to initialize schema")?;
+
+        Ok(())
+    }
+
+    // -----------------------------------------------------------------------
+    // Session operations
+    // -----------------------------------------------------------------------
+
+    /// Insert a session record.  Uses INSERT OR IGNORE for idempotency.
+    /// Returns `true` if a new row was inserted, `false` if it already existed.
+    pub fn insert_session(
+        &self,
+        session_id: &str,
+        project: &str,
+        scope: &str,
+        started_at: Option<&str>,
+    ) -> Result<bool> {
+        let rows = self.conn.execute(
+            "INSERT OR IGNORE INTO sessions (session_id, project, scope, started_at)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![session_id, project, scope, started_at],
+        )
+        .context("Failed to insert session")?;
+        Ok(rows > 0)
+    }
+
+    /// Check whether a session with the given ID exists.
+    pub fn session_exists(&self, session_id: &str) -> Result<bool> {
+        let count: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM sessions WHERE session_id = ?1",
+            params![session_id],
+            |row| row.get(0),
+        )
+        .context("Failed to query session existence")?;
+        Ok(count > 0)
+    }
+
+    // -----------------------------------------------------------------------
+    // Chunk operations
+    // -----------------------------------------------------------------------
+
+    /// Insert a chunk into the database.
+    ///
+    /// If `uuid` is `Some`, duplicate UUIDs are silently skipped (returns `None`).
+    /// Returns `Some(chunk_id)` on success.
+    pub fn insert_chunk(
+        &self,
+        session_id: &str,
+        uuid: Option<&str>,
+        question: &str,
+        answer: &str,
+        timestamp: Option<&str>,
+        token_count: Option<i64>,
+    ) -> Result<Option<i64>> {
+        // If a UUID is provided, check for an existing row first.
+        if let Some(uid) = uuid {
+            let existing: Option<i64> = self.conn.query_row(
+                "SELECT id FROM chunks WHERE uuid = ?1",
+                params![uid],
+                |row| row.get(0),
+            )
+            .ok();
+            if existing.is_some() {
+                return Ok(None);
+            }
+        }
+
+        self.conn.execute(
+            "INSERT INTO chunks (session_id, uuid, question, answer, timestamp, token_count)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![session_id, uuid, question, answer, timestamp, token_count],
+        )
+        .context("Failed to insert chunk")?;
+
+        Ok(Some(self.conn.last_insert_rowid()))
+    }
+
+    // -----------------------------------------------------------------------
+    // Search / query operations
+    // -----------------------------------------------------------------------
+
+    /// Full-text search using FTS5 trigram index.
+    ///
+    /// The query string is wrapped in double-quotes so that the trigram
+    /// tokenizer treats it as a literal phrase.  Internal double-quotes in
+    /// the query are escaped by doubling them.
+    pub fn fts_search(&self, query: &str, limit: usize) -> Result<Vec<ChunkRow>> {
+        // Escape internal double-quotes, then wrap the whole query.
+        let escaped = query.replace('"', "\"\"");
+        let fts_query = format!("\"{}\"", escaped);
+
+        let mut stmt = self.conn.prepare(
+            "SELECT c.id, c.session_id, s.project, s.scope,
+                    c.question, c.answer, c.timestamp,
+                    chunks_fts.rank
+             FROM chunks_fts
+             JOIN chunks  c ON chunks_fts.rowid = c.id
+             JOIN sessions s ON c.session_id = s.session_id
+             WHERE chunks_fts MATCH ?1
+             ORDER BY chunks_fts.rank
+             LIMIT ?2",
+        )
+        .context("Failed to prepare FTS search statement")?;
+
+        let rows = stmt
+            .query_map(params![fts_query, limit as i64], |row| {
+                Ok(ChunkRow {
+                    chunk_id: row.get(0)?,
+                    session_id: row.get(1)?,
+                    project: row.get(2)?,
+                    scope: row.get(3)?,
+                    question: row.get(4)?,
+                    answer: row.get(5)?,
+                    timestamp: row.get(6)?,
+                    rank: row.get(7)?,
+                })
+            })
+            .context("Failed to execute FTS search")?
+            .collect::<Result<Vec<_>, _>>()
+            .context("Failed to collect FTS search results")?;
+
+        Ok(rows)
+    }
+
+    /// Return the most recent chunks for a given project, ordered by
+    /// `timestamp DESC`.  Rows with a `NULL` timestamp come last.
+    pub fn recent_chunks(&self, project: &str, limit: usize) -> Result<Vec<ChunkRow>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT c.id, c.session_id, s.project, s.scope,
+                    c.question, c.answer, c.timestamp,
+                    0.0 AS rank
+             FROM chunks c
+             JOIN sessions s ON c.session_id = s.session_id
+             WHERE s.project = ?1
+             ORDER BY c.timestamp DESC
+             LIMIT ?2",
+        )
+        .context("Failed to prepare recent_chunks statement")?;
+
+        let rows = stmt
+            .query_map(params![project, limit as i64], |row| {
+                Ok(ChunkRow {
+                    chunk_id: row.get(0)?,
+                    session_id: row.get(1)?,
+                    project: row.get(2)?,
+                    scope: row.get(3)?,
+                    question: row.get(4)?,
+                    answer: row.get(5)?,
+                    timestamp: row.get(6)?,
+                    rank: row.get(7)?,
+                })
+            })
+            .context("Failed to execute recent_chunks query")?
+            .collect::<Result<Vec<_>, _>>()
+            .context("Failed to collect recent_chunks results")?;
+
+        Ok(rows)
+    }
+
+    // -----------------------------------------------------------------------
+    // Statistics
+    // -----------------------------------------------------------------------
+
+    /// Return the total number of sessions and chunks stored in the database.
+    pub fn stats(&self) -> Result<(i64, i64)> {
+        let sessions: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM sessions",
+            [],
+            |row| row.get(0),
+        )
+        .context("Failed to count sessions")?;
+
+        let chunks: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM chunks",
+            [],
+            |row| row.get(0),
+        )
+        .context("Failed to count chunks")?;
+
+        Ok((sessions, chunks))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Helper: open an in-memory database ready for testing.
+    fn make_db() -> Database {
+        Database::open_in_memory().expect("open_in_memory failed")
+    }
+
+    #[test]
+    fn test_open_in_memory_creates_tables() {
+        let db = make_db();
+
+        // Each table must appear in sqlite_master.
+        for table in &["sessions", "chunks", "chunks_fts"] {
+            let count: i64 = db
+                .conn
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE name = ?1",
+                    params![table],
+                    |row| row.get(0),
+                )
+                .expect("query failed");
+            assert_eq!(count, 1, "table '{}' was not created", table);
+        }
+    }
+
+    #[test]
+    fn test_insert_and_query_session() {
+        let db = make_db();
+        let inserted = db
+            .insert_session("sess-1", "/home/user/proj", "global", Some("2024-01-01T00:00:00"))
+            .expect("insert_session failed");
+        assert!(inserted, "expected new row");
+
+        // Second insert of same session_id should be a no-op.
+        let dup = db
+            .insert_session("sess-1", "/home/user/proj", "global", None)
+            .expect("insert_session (dup) failed");
+        assert!(!dup, "expected no new row for duplicate session_id");
+
+        assert!(db.session_exists("sess-1").expect("session_exists failed"));
+        assert!(!db.session_exists("sess-999").expect("session_exists failed"));
+    }
+
+    #[test]
+    fn test_insert_and_query_chunk() {
+        let db = make_db();
+        db.insert_session("sess-2", "/proj", "global", None)
+            .expect("insert_session failed");
+
+        let id = db
+            .insert_chunk(
+                "sess-2",
+                Some("uuid-abc"),
+                "How does Rust work?",
+                "Rust uses ownership for memory safety.",
+                Some("2024-01-02T10:00:00"),
+                Some(42),
+            )
+            .expect("insert_chunk failed");
+        assert!(id.is_some(), "expected a chunk id");
+
+        let (sessions, chunks) = db.stats().expect("stats failed");
+        assert_eq!(sessions, 1);
+        assert_eq!(chunks, 1);
+    }
+
+    #[test]
+    fn test_duplicate_uuid_skipped() {
+        let db = make_db();
+        db.insert_session("sess-3", "/proj", "global", None)
+            .expect("insert_session failed");
+
+        // Insert with a known UUID.
+        let first = db
+            .insert_chunk("sess-3", Some("uuid-dup"), "Q1", "A1", None, None)
+            .expect("first insert failed");
+        assert!(first.is_some());
+
+        // Insert the same UUID again — must be skipped.
+        let second = db
+            .insert_chunk("sess-3", Some("uuid-dup"), "Q2", "A2", None, None)
+            .expect("second insert failed");
+        assert!(second.is_none(), "duplicate UUID must return None");
+
+        let (_, chunks) = db.stats().expect("stats failed");
+        assert_eq!(chunks, 1, "only one row should exist");
+    }
+
+    #[test]
+    fn test_fts5_search() {
+        let db = make_db();
+        db.insert_session("sess-4", "/proj", "global", None)
+            .expect("insert_session failed");
+
+        db.insert_chunk(
+            "sess-4",
+            Some("uuid-docker"),
+            "Docker設定の方法",
+            "docker-compose.ymlを作成する",
+            None,
+            None,
+        )
+        .expect("insert docker chunk failed");
+
+        db.insert_chunk(
+            "sess-4",
+            Some("uuid-rust"),
+            "Rust入門",
+            "cargoでプロジェクトを作成する",
+            None,
+            None,
+        )
+        .expect("insert rust chunk failed");
+
+        let results = db.fts_search("Docker", 10).expect("fts_search failed");
+        assert_eq!(results.len(), 1, "expected exactly 1 result for 'Docker'");
+        assert!(
+            results[0].question.contains("Docker"),
+            "result question should contain 'Docker'"
+        );
+    }
+}

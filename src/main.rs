@@ -2,6 +2,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 mod cmd;
+mod db;
 
 #[derive(Parser)]
 #[command(name = "kiok", about = "Memory engine for Claude Code")]

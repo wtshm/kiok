@@ -1,5 +1,6 @@
 use anyhow::Result;
 
+pub mod recall;
 pub mod save;
 pub mod search_cmd;
 
@@ -9,8 +10,7 @@ pub fn run(command: crate::Commands) -> Result<()> {
             save::run(&project)
         }
         crate::Commands::Recall { project, count } => {
-            eprintln!("recall: project={}, count={}", project, count);
-            Ok(())
+            recall::run(&project, count)
         }
         crate::Commands::Search { query, project, count } => {
             search_cmd::run(&query, project.as_deref(), count)

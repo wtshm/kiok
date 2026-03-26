@@ -5,6 +5,7 @@ mod chunk;
 mod cmd;
 mod db;
 mod filter;
+mod search;
 
 #[derive(Parser)]
 #[command(name = "kiok", about = "Memory engine for Claude Code")]

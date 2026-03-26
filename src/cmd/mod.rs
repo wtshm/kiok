@@ -1,18 +1,19 @@
 use anyhow::Result;
 
+pub mod save;
+pub mod search_cmd;
+
 pub fn run(command: crate::Commands) -> Result<()> {
     match command {
         crate::Commands::Save { project } => {
-            eprintln!("save: project={}", project);
-            Ok(())
+            save::run(&project)
         }
         crate::Commands::Recall { project, count } => {
             eprintln!("recall: project={}, count={}", project, count);
             Ok(())
         }
         crate::Commands::Search { query, project, count } => {
-            eprintln!("search: query={}, project={:?}, count={}", query, project, count);
-            Ok(())
+            search_cmd::run(&query, project.as_deref(), count)
         }
         crate::Commands::Import => {
             eprintln!("import");

@@ -213,12 +213,6 @@ html { font-size: 15px; }
 body { background: var(--bg); color: var(--text); font-family: var(--sans);
        min-height: 100vh; overflow-x: hidden; }
 
-/* --- Noise texture overlay --- */
-body::before {
-  content: ''; position: fixed; inset: 0; z-index: 9999; pointer-events: none;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
-}
-
 /* --- Layout --- */
 .shell { display: grid; grid-template-columns: 260px 1fr; min-height: 100vh; }
 
@@ -233,15 +227,14 @@ body::before {
             color: var(--text3); letter-spacing: 0.05em; }
 .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .stat-card { background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
-             padding: 16px; transition: border-color 0.2s; }
-.stat-card:hover { border-color: var(--border-hover); }
+             padding: 16px; }
 .stat-val { font-family: var(--mono); font-size: 1.6rem; font-weight: 500;
             color: var(--text); line-height: 1; }
 .stat-lbl { font-size: 0.7rem; color: var(--text3); text-transform: uppercase;
             letter-spacing: 0.1em; margin-top: 6px; }
 .nav { display: flex; flex-direction: column; gap: 4px; }
 .nav-item { padding: 10px 14px; border-radius: 6px; cursor: pointer; font-size: 0.85rem;
-            color: var(--text2); transition: all 0.15s; display: flex; align-items: center; gap: 10px;
+            color: var(--text2); display: flex; align-items: center; gap: 10px;
             font-weight: 400; letter-spacing: 0.01em; }
 .nav-item:hover { background: var(--accent-glow); color: var(--text); }
 .nav-item.active { background: var(--accent-dim); color: var(--accent); font-weight: 500; }
@@ -255,8 +248,8 @@ body::before {
 .search-input { width: 100%; padding: 14px 18px 14px 44px; background: var(--surface);
                 border: 1px solid var(--border); border-radius: 10px; color: var(--text);
                 font-family: var(--mono); font-size: 0.85rem; font-weight: 300;
-                transition: all 0.2s; letter-spacing: 0.02em; }
-.search-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+                transition: border-color 0.15s; letter-spacing: 0.02em; }
+.search-input:focus { outline: none; border-color: var(--accent); }
 .search-input::placeholder { color: var(--text3); }
 .search-icon { position: absolute; left: 16px; top: 50%; transform: translateY(-50%);
                color: var(--text3); font-size: 0.9rem; pointer-events: none; }
@@ -266,10 +259,8 @@ body::before {
 /* --- Cards --- */
 .cards { display: flex; flex-direction: column; gap: 8px; }
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
-        padding: 20px 24px; cursor: pointer; transition: all 0.2s;
-        animation: fadeUp 0.3s ease both; }
-.card:hover { border-color: var(--border-hover); transform: translateY(-1px);
-              box-shadow: 0 4px 24px rgba(0,0,0,0.3); }
+        padding: 20px 24px; cursor: pointer; contain: content; }
+.card:hover { border-color: var(--border-hover); }
 .card.expanded { background: var(--surface2); }
 .card-head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
 .card-project { font-family: var(--mono); font-size: 0.7rem; font-weight: 500;
@@ -281,9 +272,8 @@ body::before {
 .card-a { font-size: 0.82rem; color: var(--text2); line-height: 1.6; margin-top: 12px;
           padding-top: 12px; border-top: 1px solid var(--border);
           white-space: pre-wrap; word-break: break-word;
-          max-height: 0; overflow: hidden; opacity: 0; transition: all 0.3s ease; }
-.card.expanded .card-a { max-height: 2000px; opacity: 1; }
-.card-a:not(.card.expanded .card-a) { }
+          display: none; }
+.card.expanded .card-a { display: block; }
 .card-preview { font-size: 0.8rem; color: var(--text3); margin-top: 8px;
                 overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card.expanded .card-preview { display: none; }
@@ -293,8 +283,7 @@ body::before {
 .session-row { display: grid; grid-template-columns: 140px 80px 60px 1fr 100px;
                gap: 16px; align-items: center; padding: 14px 20px;
                background: var(--surface); border: 1px solid var(--border);
-               border-radius: 8px; font-size: 0.82rem; transition: all 0.15s;
-               animation: fadeUp 0.3s ease both; }
+               border-radius: 8px; font-size: 0.82rem; contain: content; }
 .session-row:hover { border-color: var(--border-hover); }
 .session-row .project { font-family: var(--mono); color: var(--accent); font-weight: 500; font-size: 0.78rem; }
 .session-row .scope { font-family: var(--mono); font-size: 0.7rem; padding: 2px 8px;
@@ -317,11 +306,8 @@ body::before {
          font-family: var(--mono); font-size: 0.85rem; }
 .empty-icon { font-size: 2rem; color: var(--text3); margin-bottom: 12px; opacity: 0.3; }
 
-/* --- Animations --- */
-@keyframes fadeUp {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
-}
+/* --- Reduced motion --- */
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
 </style>
 </head>
 <body>
@@ -384,7 +370,7 @@ async function loadSessions() {
   let html = '<div class="grid-header"><span>Project</span><span>Scope</span><span>Chunks</span><span>Session ID</span><span style="text-align:right">Imported</span></div>';
   html += '<div class="sessions-grid">';
   rows.forEach((s,i) => {
-    html += `<div class="session-row" style="animation-delay:${i*30}ms">
+    html += `<div class="session-row">
       <span class="project">${esc(s.project)}</span>
       <span class="scope scope-${s.scope}">${s.scope}</span>
       <span class="chunks-count">${s.chunk_count}</span>
@@ -418,7 +404,7 @@ async function doSearch(q) {
 function renderChunks(rows) {
   let html = '<div class="cards">';
   rows.forEach((c,i) => {
-    html += `<div class="card" style="animation-delay:${i*25}ms" onclick="this.classList.toggle('expanded')">
+    html += `<div class="card" onclick="this.classList.toggle('expanded')">
       <div class="card-head">
         <span class="card-project">${esc(c.project)}</span>
         <span class="card-time">${relTime(c.timestamp)}</span>

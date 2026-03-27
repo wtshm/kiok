@@ -42,7 +42,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans);
                   color: var(--text3); letter-spacing: 0.05em; }
 
 /* Main */
-.main { padding: 32px 40px; }
+.main { padding: 32px 40px; min-width: 0; overflow: hidden; }
 .search-wrap { position: relative; margin-bottom: 28px; }
 .search-input { width: 100%; padding: 14px 18px 14px 44px; background: var(--surface);
                 border: 1px solid var(--border); border-radius: 10px; color: var(--text);
@@ -67,7 +67,8 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans);
                 border-radius: 20px; letter-spacing: 0.03em; }
 .card-time { font-family: var(--mono); font-size: 0.7rem; color: var(--text3);
              margin-left: auto; letter-spacing: 0.02em; }
-.card-q { font-size: 0.9rem; color: var(--text); line-height: 1.5; font-weight: 400; }
+.card-q { font-size: 0.9rem; color: var(--text); line-height: 1.5; font-weight: 400;
+          overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-a { font-size: 0.82rem; color: var(--text2); line-height: 1.6; margin-top: 12px;
           padding-top: 12px; border-top: 1px solid var(--border);
           white-space: pre-wrap; word-break: break-word;

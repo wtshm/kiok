@@ -4,8 +4,7 @@ use std::path::PathBuf;
 
 use crate::chunk;
 use crate::db::Database;
-use crate::embed::EmbeddingBackend;
-use crate::embed::onnx::OnnxBackend;
+
 use crate::policy;
 
 // ---------------------------------------------------------------------------
@@ -152,53 +151,6 @@ pub fn model_onnx_path() -> Result<PathBuf> {
         .join("models")
         .join("ruri-v3-310m")
         .join("model.onnx"))
-}
-
-// ---------------------------------------------------------------------------
-// Embedding helper
-// ---------------------------------------------------------------------------
-
-/// Load the ONNX backend and insert embeddings for all newly-inserted chunks.
-///
-/// Returns the number of embeddings successfully stored.
-fn embed_and_store(
-    db: &Database,
-    chunks: &[crate::chunk::Chunk],
-    chunk_ids: &[Option<i64>],
-    model_dir: &std::path::Path,
-) -> Result<usize> {
-    let backend = OnnxBackend::load(model_dir)?;
-
-    // Gather IDs + concatenated question+answer for chunks that were
-    // actually inserted (i.e., chunk_ids[i] is Some).
-    let chunks_with_ids: Vec<(&crate::chunk::Chunk, Option<i64>)> =
-        chunks.iter().zip(chunk_ids.iter().copied()).collect();
-
-    let texts: Vec<String> = chunks_with_ids
-        .iter()
-        .filter_map(|(c, id)| id.map(|i| (i, format!("{} {}", c.question, c.answer))))
-        .map(|(_, t)| t)
-        .collect();
-
-    let ids: Vec<i64> = chunks_with_ids
-        .iter()
-        .filter_map(|(_, id)| *id)
-        .collect();
-
-    if ids.is_empty() {
-        return Ok(0);
-    }
-
-    let text_refs: Vec<&str> = texts.iter().map(String::as_str).collect();
-    let embeddings = backend.embed(&text_refs)?;
-
-    let mut count = 0usize;
-    for (chunk_id, embedding) in ids.iter().zip(embeddings.iter()) {
-        db.insert_embedding(*chunk_id, embedding)?;
-        count += 1;
-    }
-
-    Ok(count)
 }
 
 // ---------------------------------------------------------------------------

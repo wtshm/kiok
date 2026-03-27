@@ -1,17 +1,17 @@
 :root {
-  --bg: #08080a;
-  --surface: #111114;
-  --surface2: #18181c;
-  --border: #1e1e24;
-  --border-hover: #2a2a32;
-  --text: #d4d4d8;
-  --text2: #71717a;
-  --text3: #3f3f46;
-  --accent: #3b82f6;
-  --accent-dim: #3b82f618;
-  --green: #4ade80;
-  --yellow: #fbbf24;
-  --red: #f87171;
+  --bg: #1b1b1f;
+  --surface: #242429;
+  --surface2: #2c2c32;
+  --border: #35353d;
+  --border-hover: #44444e;
+  --text: #b4b4bc;
+  --text2: #84848c;
+  --text3: #5c5c64;
+  --accent: #7aa2f7;
+  --accent-dim: #7aa2f714;
+  --green: #73daca;
+  --yellow: #e0af68;
+  --red: #f7768e;
   --mono: "JetBrains Mono", monospace;
   --sans: "DM Sans", sans-serif;
 }
@@ -262,15 +262,15 @@ body {
   text-align: center;
 }
 .scope-global {
-  background: #4ade8012;
+  background: #73daca14;
   color: var(--green);
 }
 .scope-project {
-  background: #fbbf2412;
+  background: #e0af6814;
   color: var(--yellow);
 }
 .scope-isolated {
-  background: #f8717112;
+  background: #f7768e14;
   color: var(--red);
 }
 .session-row .chunks-count {

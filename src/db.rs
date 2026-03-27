@@ -263,13 +263,23 @@ impl Database {
 
     /// Full-text search using FTS5 trigram index.
     ///
-    /// The query string is wrapped in double-quotes so that the trigram
-    /// tokenizer treats it as a literal phrase.  Internal double-quotes in
-    /// the query are escaped by doubling them.
+    /// Each whitespace-separated token is wrapped in double-quotes (trigram
+    /// substring match) and combined with AND so that all terms must appear
+    /// somewhere in the document, but not necessarily as a contiguous phrase.
     pub fn fts_search(&self, query: &str, limit: usize) -> Result<Vec<ChunkRow>> {
-        // Escape internal double-quotes, then wrap the whole query.
-        let escaped = query.replace('"', "\"\"");
-        let fts_query = format!("\"{}\"", escaped);
+        let terms: Vec<&str> = query.split_whitespace().collect();
+        let fts_query = if terms.len() <= 1 {
+            // Single term (or empty): wrap as a quoted substring.
+            let escaped = query.replace('"', "\"\"");
+            format!("\"{}\"", escaped)
+        } else {
+            // Multiple terms: AND them together as individual substrings.
+            terms
+                .iter()
+                .map(|t| format!("\"{}\"", t.replace('"', "\"\"")))
+                .collect::<Vec<_>>()
+                .join(" AND ")
+        };
 
         let mut stmt = self.conn.prepare(
             "SELECT c.id, c.session_id, s.project, s.scope,

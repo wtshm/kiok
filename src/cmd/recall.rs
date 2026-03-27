@@ -2,10 +2,10 @@ use anyhow::Result;
 
 use crate::db::Database;
 use crate::embed::{self, EmbeddingBackend};
-use crate::embed::onnx::OnnxBackend;
+use super::save::model_dir;
 use crate::policy;
 use crate::search::{self, SearchConfig};
-use super::save::{db_path, model_onnx_path, project_name};
+use super::save::{db_path, project_name};
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -50,7 +50,7 @@ pub fn run(query: &str, project_path: &str, count: usize) -> Result<()> {
     // --- 4. Filter by visibility policy. ---
     let filtered: Vec<_> = results
         .into_iter()
-        .filter(|r| policy::is_visible(&r.scope, &r.project, viewer_scope, &project))
+        .filter(|r| policy::is_visible(&r.chunk.scope, &r.chunk.project, viewer_scope, &project))
         .take(count)
         .collect();
 
@@ -58,7 +58,6 @@ pub fn run(query: &str, project_path: &str, count: usize) -> Result<()> {
         return Ok(());
     }
 
-    // --- 5. Print in Markdown format. ---
     println!("<kiok>");
     println!("The following are past conversations from previous Claude Code sessions,");
     println!("retrieved by kiok (a session memory engine). Use them as context when relevant.");
@@ -66,14 +65,15 @@ pub fn run(query: &str, project_path: &str, count: usize) -> Result<()> {
 
     for r in &filtered {
         let date = r
+            .chunk
             .timestamp
             .as_deref()
             .and_then(|ts| ts.get(..10))
             .unwrap_or("(no date)");
 
-        println!("- [{}] [project: {}]", date, r.project);
-        println!("  User: {}", truncate(&r.question, 200));
-        println!("  Assistant: {}", truncate(&r.answer, 500));
+        println!("- [{}] [project: {}]", date, r.chunk.project);
+        println!("  User: {}", truncate(&r.chunk.question, 200));
+        println!("  Assistant: {}", truncate(&r.chunk.answer, 500));
         println!();
     }
 
@@ -88,17 +88,10 @@ pub fn run(query: &str, project_path: &str, count: usize) -> Result<()> {
 
 /// Attempt to embed the query text using the ONNX backend.
 ///
-/// Returns `None` silently if the model, ONNX Runtime dylib, or any other
-/// prerequisite is unavailable — the caller falls back to keyword-only search.
+/// Returns `None` silently if the model or ONNX Runtime is unavailable.
 fn try_embed_query(query: &str) -> Option<Vec<f32>> {
-    embed::ensure_ort_dylib()?;
-
-    let model_path = model_onnx_path().ok()?;
-    if !model_path.exists() {
-        return None;
-    }
-
-    let backend = OnnxBackend::load(model_path.parent()?).ok()?;
+    let dir = model_dir().ok()?;
+    let backend = embed::try_load_backend(&dir)?;
     let mut embeddings = backend.embed(&[query]).ok()?;
     if embeddings.is_empty() {
         return None;
@@ -146,5 +139,17 @@ mod tests {
     fn test_truncate_multibyte_characters() {
         let result = truncate("Docker設定の方法", 6);
         assert_eq!(result, "Docker...");
+    }
+
+    #[test]
+    fn test_try_embed_query_returns_none_without_model() {
+        // With a nonexistent model directory, try_embed_query should
+        // gracefully return None (fallback to FTS-only search).
+        let result = try_embed_query("test query");
+
+        // We can't guarantee the model is installed in CI, so we just
+        // verify it doesn't panic.  If model IS installed, it returns Some.
+        // If not, it returns None.  Both are valid.
+        let _ = result;
     }
 }

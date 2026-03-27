@@ -1,20 +1,7 @@
 use anyhow::Result;
 
-use crate::db::{ChunkRow, Database};
-
-// ---------------------------------------------------------------------------
-// Public types
-// ---------------------------------------------------------------------------
-
-/// A single FTS5 search result with a 1-based rank position.
-pub struct SearchResult {
-    pub chunk: ChunkRow,
-    pub rank: usize,
-}
-
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
+use crate::db::Database;
+use super::SearchResult;
 
 /// Run a full-text keyword search against the database and return results
 /// with 1-based rank positions.

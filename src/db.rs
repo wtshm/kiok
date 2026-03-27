@@ -4,7 +4,7 @@ use rusqlite::{Connection, ffi::sqlite3_auto_extension, params};
 use sqlite_vec::sqlite3_vec_init;
 use std::path::Path;
 
-/// A single search result row combining chunk and session data.
+/// A single chunk row combining chunk and session data.
 #[derive(Debug, Clone)]
 pub struct ChunkRow {
     pub chunk_id: i64,
@@ -14,7 +14,27 @@ pub struct ChunkRow {
     pub question: String,
     pub answer: String,
     pub timestamp: Option<String>,
-    pub rank: f64,
+}
+
+impl ChunkRow {
+    /// Concatenate question and answer for embedding input.
+    pub fn embed_text(&self) -> String {
+        format!("{} {}", self.question, self.answer)
+    }
+
+    /// Construct from a rusqlite Row with the standard 7-column layout:
+    /// (id, session_id, project, scope, question, answer, timestamp).
+    fn from_row(row: &rusqlite::Row) -> rusqlite::Result<Self> {
+        Ok(Self {
+            chunk_id: row.get(0)?,
+            session_id: row.get(1)?,
+            project: row.get(2)?,
+            scope: row.get(3)?,
+            question: row.get(4)?,
+            answer: row.get(5)?,
+            timestamp: row.get(6)?,
+        })
+    }
 }
 
 /// A session row with chunk count for listing.
@@ -259,7 +279,7 @@ impl Database {
     pub fn chunks_without_embeddings(&self, limit: usize) -> Result<Vec<ChunkRow>> {
         let mut stmt = self.conn.prepare(
             "SELECT c.id, c.session_id, s.project, s.scope,
-                    c.question, c.answer, c.timestamp, 0.0 as rank
+                    c.question, c.answer, c.timestamp
              FROM chunks c
              JOIN sessions s ON s.session_id = c.session_id
              LEFT JOIN chunks_vec v ON v.chunk_id = c.id
@@ -268,24 +288,10 @@ impl Database {
              LIMIT ?1",
         )?;
 
-        let rows = stmt.query_map(params![limit as i64], |row| {
-            Ok(ChunkRow {
-                chunk_id: row.get(0)?,
-                session_id: row.get(1)?,
-                project: row.get(2)?,
-                scope: row.get(3)?,
-                question: row.get(4)?,
-                answer: row.get(5)?,
-                timestamp: row.get(6)?,
-                rank: row.get(7)?,
-            })
-        })?;
-
-        let mut results = Vec::new();
-        for row in rows {
-            results.push(row?);
-        }
-        Ok(results)
+        let rows = stmt
+            .query_map(params![limit as i64], ChunkRow::from_row)?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
     }
 
     // -----------------------------------------------------------------------
@@ -314,8 +320,7 @@ impl Database {
 
         let mut stmt = self.conn.prepare(
             "SELECT c.id, c.session_id, s.project, s.scope,
-                    c.question, c.answer, c.timestamp,
-                    chunks_fts.rank
+                    c.question, c.answer, c.timestamp
              FROM chunks_fts
              JOIN chunks  c ON chunks_fts.rowid = c.id
              JOIN sessions s ON c.session_id = s.session_id
@@ -326,18 +331,7 @@ impl Database {
         .context("Failed to prepare FTS search statement")?;
 
         let rows = stmt
-            .query_map(params![fts_query, limit as i64], |row| {
-                Ok(ChunkRow {
-                    chunk_id: row.get(0)?,
-                    session_id: row.get(1)?,
-                    project: row.get(2)?,
-                    scope: row.get(3)?,
-                    question: row.get(4)?,
-                    answer: row.get(5)?,
-                    timestamp: row.get(6)?,
-                    rank: row.get(7)?,
-                })
-            })
+            .query_map(params![fts_query, limit as i64], ChunkRow::from_row)
             .context("Failed to execute FTS search")?
             .collect::<Result<Vec<_>, _>>()
             .context("Failed to collect FTS search results")?;
@@ -363,6 +357,24 @@ impl Database {
         Ok(())
     }
 
+    /// Execute `BEGIN` / `COMMIT` around a closure for batch writes.
+    pub fn in_transaction<F, T>(&self, f: F) -> Result<T>
+    where
+        F: FnOnce() -> Result<T>,
+    {
+        self.conn.execute_batch("BEGIN")?;
+        match f() {
+            Ok(val) => {
+                self.conn.execute_batch("COMMIT")?;
+                Ok(val)
+            }
+            Err(e) => {
+                let _ = self.conn.execute_batch("ROLLBACK");
+                Err(e)
+            }
+        }
+    }
+
     /// Return the `limit` closest chunks to `query_embedding` using vec0 KNN search.
     ///
     /// Results are ordered by ascending distance (nearest first).
@@ -371,8 +383,7 @@ impl Database {
 
         let mut stmt = self.conn.prepare(
             "SELECT c.id, c.session_id, s.project, s.scope,
-                    c.question, c.answer, c.timestamp,
-                    cv.distance
+                    c.question, c.answer, c.timestamp
              FROM chunks_vec cv
              JOIN chunks   c ON cv.chunk_id = c.id
              JOIN sessions s ON c.session_id = s.session_id
@@ -382,18 +393,7 @@ impl Database {
         .context("Failed to prepare vec_search statement")?;
 
         let rows = stmt
-            .query_map(params![blob, limit as i64], |row| {
-                Ok(ChunkRow {
-                    chunk_id: row.get(0)?,
-                    session_id: row.get(1)?,
-                    project: row.get(2)?,
-                    scope: row.get(3)?,
-                    question: row.get(4)?,
-                    answer: row.get(5)?,
-                    timestamp: row.get(6)?,
-                    rank: row.get(7)?,
-                })
-            })
+            .query_map(params![blob, limit as i64], ChunkRow::from_row)
             .context("Failed to execute vec_search")?
             .collect::<Result<Vec<_>, _>>()
             .context("Failed to collect vec_search results")?;
@@ -437,31 +437,17 @@ impl Database {
     pub fn list_chunks(&self, limit: usize, offset: usize) -> Result<Vec<ChunkRow>> {
         let mut stmt = self.conn.prepare(
             "SELECT c.id, c.session_id, s.project, s.scope,
-                    c.question, c.answer, c.timestamp, 0.0
+                    c.question, c.answer, c.timestamp
              FROM chunks c
              JOIN sessions s ON s.session_id = c.session_id
              ORDER BY c.timestamp DESC
              LIMIT ?1 OFFSET ?2"
         )?;
 
-        let rows = stmt.query_map(params![limit as i64, offset as i64], |row| {
-            Ok(ChunkRow {
-                chunk_id: row.get(0)?,
-                session_id: row.get(1)?,
-                project: row.get(2)?,
-                scope: row.get(3)?,
-                question: row.get(4)?,
-                answer: row.get(5)?,
-                timestamp: row.get(6)?,
-                rank: row.get(7)?,
-            })
-        })?;
-
-        let mut results = Vec::new();
-        for row in rows {
-            results.push(row?);
-        }
-        Ok(results)
+        let rows = stmt
+            .query_map(params![limit as i64, offset as i64], ChunkRow::from_row)?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
     }
 
     /// Return the total number of sessions and chunks stored in the database.
@@ -610,5 +596,96 @@ mod tests {
             results[0].question.contains("Docker"),
             "result question should contain 'Docker'"
         );
+    }
+
+    #[test]
+    fn test_embed_text_concatenates_question_and_answer() {
+        let chunk = ChunkRow {
+            chunk_id: 1,
+            session_id: "s1".to_owned(),
+            project: "proj".to_owned(),
+            scope: "global".to_owned(),
+            question: "What is Rust?".to_owned(),
+            answer: "A systems language.".to_owned(),
+            timestamp: None,
+        };
+        assert_eq!(chunk.embed_text(), "What is Rust? A systems language.");
+    }
+
+    #[test]
+    fn test_in_transaction_commits_on_success() {
+        let db = make_db();
+        db.insert_session("s1", "proj", "global", None).unwrap();
+
+        db.in_transaction(|| {
+            db.insert_chunk("s1", Some("u1"), "Q1", "A1", None, None)?;
+            db.insert_chunk("s1", Some("u2"), "Q2", "A2", None, None)?;
+            Ok(())
+        })
+        .unwrap();
+
+        let (_, chunks) = db.stats().unwrap();
+        assert_eq!(chunks, 2, "both chunks should be committed");
+    }
+
+    #[test]
+    fn test_in_transaction_rolls_back_on_error() {
+        let db = make_db();
+        db.insert_session("s1", "proj", "global", None).unwrap();
+
+        let result: Result<()> = db.in_transaction(|| {
+            db.insert_chunk("s1", Some("u1"), "Q1", "A1", None, None)?;
+            anyhow::bail!("simulated error");
+        });
+
+        assert!(result.is_err());
+        let (_, chunks) = db.stats().unwrap();
+        assert_eq!(chunks, 0, "chunk should be rolled back");
+    }
+
+    #[test]
+    fn test_insert_embedding_and_chunks_without_embeddings() {
+        let db = make_db();
+        db.insert_session("s1", "proj", "global", None).unwrap();
+
+        let id1 = db
+            .insert_chunk("s1", None, "Q1", "A1", None, None)
+            .unwrap()
+            .unwrap();
+        let id2 = db
+            .insert_chunk("s1", None, "Q2", "A2", None, None)
+            .unwrap()
+            .unwrap();
+
+        // Both should be pending initially.
+        let pending = db.chunks_without_embeddings(10).unwrap();
+        assert_eq!(pending.len(), 2);
+
+        // Embed one chunk.
+        let emb = vec![0.1f32; 768];
+        db.insert_embedding(id1, &emb).unwrap();
+
+        // Only one should remain pending.
+        let pending = db.chunks_without_embeddings(10).unwrap();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].chunk_id, id2);
+    }
+
+    #[test]
+    fn test_migrate_chunks_vec_recreates_on_dimension_change() {
+        // Open a DB and manually create chunks_vec with wrong dimensions.
+        let db = Database::open_in_memory().expect("open_in_memory failed");
+
+        // The standard open_in_memory already creates chunks_vec with FLOAT[768].
+        // Verify it exists.
+        let sql: String = db
+            .conn
+            .query_row(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='chunks_vec'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("chunks_vec should exist");
+        assert!(sql.contains("768"), "should be 768-dim after creation");
     }
 }

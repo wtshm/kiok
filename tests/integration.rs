@@ -51,12 +51,12 @@ fn test_save_and_fts_search() {
 
     // The top result should mention Docker somewhere.
     let top = &results[0];
-    let combined = format!("{} {}", top.question, top.answer).to_lowercase();
+    let combined = format!("{} {}", top.chunk.question, top.chunk.answer).to_lowercase();
     assert!(
         combined.contains("docker"),
         "top result should contain 'docker', got: question='{}' answer='{}'",
-        top.question,
-        top.answer
+        top.chunk.question,
+        top.chunk.answer
     );
 }
 
@@ -121,7 +121,7 @@ fn test_policy_filtering() {
 
     let visible_to_global_viewer: Vec<_> = results
         .iter()
-        .filter(|r| policy::is_visible(&r.scope, &r.project, viewer_scope, viewer_project))
+        .filter(|r| policy::is_visible(&r.chunk.scope, &r.chunk.project, viewer_scope, viewer_project))
         .collect();
 
     // The viewer is global-project with Project scope. It should see:
@@ -133,7 +133,7 @@ fn test_policy_filtering() {
         "global-project viewer with Project scope should see exactly 1 result"
     );
     assert_eq!(
-        visible_to_global_viewer[0].project, "global-project",
+        visible_to_global_viewer[0].chunk.project, "global-project",
         "the visible result should belong to global-project"
     );
 
@@ -145,8 +145,8 @@ fn test_policy_filtering() {
         .iter()
         .filter(|r| {
             policy::is_visible(
-                &r.scope,
-                &r.project,
+                &r.chunk.scope,
+                &r.chunk.project,
                 isolated_viewer_scope,
                 isolated_viewer_project,
             )
@@ -160,7 +160,7 @@ fn test_policy_filtering() {
         "isolated-project viewer should see exactly 1 result (own project only)"
     );
     assert_eq!(
-        visible_to_isolated_viewer[0].project, "isolated-project",
+        visible_to_isolated_viewer[0].chunk.project, "isolated-project",
         "the visible result for the isolated viewer should be from isolated-project"
     );
 }

@@ -1,9 +1,8 @@
-use anyhow::{Context, Result, bail};
+use anyhow::Result;
 
 use crate::db::Database;
 use crate::embed::{self, EmbeddingBackend};
-use crate::embed::onnx::OnnxBackend;
-use super::save::{db_path, model_onnx_path};
+use super::save::{db_path, model_dir};
 
 /// Maximum number of chunks to embed in a single ONNX inference call.
 /// Kept small to avoid OOM on machines with limited RAM (~1.2GB model + batch).
@@ -15,28 +14,17 @@ const BATCH_SIZE: usize = 8;
 /// It loads the ONNX model once and processes all un-embedded chunks in
 /// small batches to keep peak memory manageable.
 pub fn run() -> Result<()> {
-    let model_path = model_onnx_path()?;
-    if !model_path.exists() {
-        return Ok(()); // No model, nothing to do
-    }
-
-    // Fail fast if ONNX Runtime shared library is not available.
-    if embed::ensure_ort_dylib().is_none() {
-        bail!(
-            "ONNX Runtime shared library not found. \
-             Install it (brew install onnxruntime) or set ORT_DYLIB_PATH."
-        );
-    }
+    let dir = model_dir()?;
+    let backend = match embed::try_load_backend(&dir) {
+        Some(b) => b,
+        None => return Ok(()),
+    };
 
     let path = db_path()?;
     if !path.exists() {
         return Ok(());
     }
     let db = Database::open(path)?;
-
-    let backend = OnnxBackend::load(
-        model_path.parent().context("Invalid model path")?,
-    )?;
 
     let mut total = 0usize;
     loop {
@@ -47,26 +35,20 @@ pub fn run() -> Result<()> {
 
         let texts: Vec<String> = pending
             .iter()
-            .map(|c| format!("{} {}", c.question, c.answer))
+            .map(|c| c.embed_text())
             .collect();
         let text_refs: Vec<&str> = texts.iter().map(String::as_str).collect();
 
         let embeddings = backend.embed(&text_refs)?;
 
-        for (chunk, embedding) in pending.iter().zip(embeddings.iter()) {
-            match db.insert_embedding(chunk.chunk_id, embedding) {
-                Ok(_) => total += 1,
-                Err(e) => {
-                    eprintln!(
-                        "embed: failed to insert chunk {} (dim={}): {}",
-                        chunk.chunk_id,
-                        embedding.len(),
-                        e
-                    );
-                    return Err(e);
-                }
+        // Wrap each batch insert in a transaction to reduce fsync overhead.
+        db.in_transaction(|| {
+            for (chunk, embedding) in pending.iter().zip(embeddings.iter()) {
+                db.insert_embedding(chunk.chunk_id, embedding)?;
+                total += 1;
             }
-        }
+            Ok(())
+        })?;
     }
 
     if total > 0 {

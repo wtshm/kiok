@@ -119,18 +119,12 @@ pub fn run(project_path: &str) -> Result<()> {
     // Embedding loads a 1.2GB ONNX model and is too slow to run inline.
     // Spawn a detached process so save returns immediately.
     if let Ok(kiok_bin) = std::env::current_exe() {
-        let mut cmd = std::process::Command::new(kiok_bin);
-        cmd.arg("embed")
+        let _ = std::process::Command::new(kiok_bin)
+            .arg("embed")
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null());
-
-        // Propagate ORT_DYLIB_PATH so the child can find the ONNX Runtime dylib.
-        if let Some(dylib_path) = crate::embed::ensure_ort_dylib() {
-            cmd.env("ORT_DYLIB_PATH", dylib_path);
-        }
-
-        let _ = cmd.spawn();
+            .stderr(std::process::Stdio::null())
+            .spawn();
     }
 
     // --- 8. Print summary. ---
@@ -149,14 +143,9 @@ pub fn run(project_path: &str) -> Result<()> {
 // Path helpers for the ONNX model
 // ---------------------------------------------------------------------------
 
-/// Returns `~/.kiok/models/ruri-v3-310m/model.onnx`.
-pub fn model_onnx_path() -> Result<PathBuf> {
-    let home = dirs::home_dir().context("Could not determine home directory")?;
-    Ok(home
-        .join(".kiok")
-        .join("models")
-        .join("ruri-v3-310m")
-        .join("model.onnx"))
+/// Returns `~/.kiok/models/ruri-v3-310m/`.
+pub fn model_dir() -> Result<PathBuf> {
+    Ok(data_dir()?.join("models").join("ruri-v3-310m"))
 }
 
 // ---------------------------------------------------------------------------

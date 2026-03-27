@@ -1,16 +1,14 @@
 use anyhow::{Context, Result};
 use std::fs;
 use std::io::Write;
-use std::path::PathBuf;
 
 use crate::db::Database;
-use super::save::{data_dir, db_path};
+use super::save::{data_dir, db_path, model_dir};
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const MODEL_NAME: &str = "ruri-v3-310m";
 const HF_BASE_URL: &str =
     "https://huggingface.co/keitokei1994/ruri-v3-310m-onnx/resolve/main";
 
@@ -55,11 +53,7 @@ pub fn run() -> Result<()> {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Returns `~/.kiok/models/ruri-v3-310m/`.
-pub fn model_dir() -> Result<PathBuf> {
-    let home = dirs::home_dir().context("Could not determine home directory")?;
-    Ok(home.join(".kiok").join("models").join(MODEL_NAME))
-}
+// model_dir() is re-exported from save.rs
 
 /// Download all required model files from HuggingFace into `model_dir`.
 async fn download_model_files(model_dir: &std::path::Path) -> Result<()> {

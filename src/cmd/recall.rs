@@ -47,7 +47,7 @@ pub fn run(query: &str, project_path: &str, count: usize) -> Result<()> {
     }
 
     // --- 5. Print in Markdown format. ---
-    println!("<kiok-recall>");
+    println!("<kiok>");
     println!("The following are past conversations from previous Claude Code sessions,");
     println!("retrieved by kiok (a session memory engine). Use them as context when relevant.");
     println!();
@@ -65,7 +65,7 @@ pub fn run(query: &str, project_path: &str, count: usize) -> Result<()> {
         println!();
     }
 
-    println!("</kiok-recall>");
+    println!("</kiok>");
 
     Ok(())
 }

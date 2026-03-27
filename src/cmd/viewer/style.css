@@ -19,11 +19,8 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans);
 .sidebar { background: var(--surface); border-right: 1px solid var(--border);
            padding: 32px 24px; display: flex; flex-direction: column; gap: 32px;
            position: sticky; top: 0; height: 100vh; overflow-y: auto; }
-.logo { display: flex; align-items: baseline; gap: 12px; }
 .logo-mark { font-family: var(--mono); font-size: 1.4rem; font-weight: 500;
              color: var(--accent); line-height: 1; letter-spacing: -0.03em; }
-.logo-ver { font-family: var(--mono); font-size: 0.6rem; font-weight: 300;
-            color: var(--text3); letter-spacing: 0.05em; }
 .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .stat-card { background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
              padding: 16px; }
@@ -69,6 +66,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans);
              margin-left: auto; letter-spacing: 0.02em; }
 .card-q { font-size: 0.9rem; color: var(--text); line-height: 1.5; font-weight: 400;
           overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card.expanded .card-q { white-space: normal; overflow: visible; }
 .card-a { font-size: 0.82rem; color: var(--text2); line-height: 1.6; margin-top: 12px;
           padding-top: 12px; border-top: 1px solid var(--border);
           white-space: pre-wrap; word-break: break-word;

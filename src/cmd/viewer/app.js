@@ -88,7 +88,7 @@ async function loadChunks(offset) {
   const r = await fetch(`/api/chunks?limit=${PAGE_SIZE}&offset=${offset}`);
   const rows = await r.json();
   if (!rows.length && offset === 0) {
-    $('#content').innerHTML = '<div class="empty"><div class="empty-icon">\u2014</div>No memories yet</div>';
+    $('#content').innerHTML = '<div class="empty"><div class="empty-icon">\u2014</div>No chunks yet</div>';
     return;
   }
   renderChunks(rows, offset);

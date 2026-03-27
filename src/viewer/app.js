@@ -79,7 +79,7 @@ async function loadSessions(offset) {
       <span class="project">${esc(s.project)}</span>
       <span class="scope scope-${s.scope}">${s.scope}</span>
       <span class="chunks-count">${s.chunk_count}</span>
-      <span class="sid">${esc(s.session_id.slice(0, 12))}...</span>
+      <span class="sid">${esc(s.session_id)}</span>
       <span class="time">${relTime(s.imported_at)}</span>
     </div>`;
   }

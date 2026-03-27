@@ -278,10 +278,8 @@ body {
   text-align: center;
 }
 .session-row .sid {
-  color: var(--text3);
+  color: var(--text);
   font-size: 0.7rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 .session-row .time {
   color: var(--text3);

@@ -60,10 +60,9 @@ Claude Code loses conversation context between sessions. CLAUDE.md conveys stati
 | Command | Purpose | Timing |
 |---------|---------|--------|
 | `kiok save` | Save session conversation | SessionEnd Hook |
-| `kiok recall` | Search and output related memories | SessionStart Hook |
-| `kiok search <query>` | Manual search | Any time |
+| `kiok recall <query>` | Hybrid search (FTS5 + RRF + time decay + policy) | Skill / on demand |
 | `kiok import` | Bulk import existing JSONL files | Initial setup |
-| `kiok policy` | Manage policies | Configuration |
+| `kiok view` | Browse memories in the browser | Any time |
 | `kiok stats` | Database statistics | Any time |
 | `kiok setup` | Download model, configure hooks | Initial setup |
 
@@ -112,42 +111,21 @@ Preserved: user text input, assistant responses, code-modifying tool calls (Edit
 
 ## Search Engine (Recall / Search)
 
-### Recall Flow (SessionStart)
+### Recall Flow
 
-1. **Context collection** — working directory (project identification). Query is built from the most recent session's last 3 Q&A chunks: extract question texts, concatenate, and truncate to 512 tokens. If no prior session exists for this project, use the project directory name as the query.
-2. **Query embedding** — Ruri v3 ONNX (~300-500ms load + ~30-80ms inference)
-3. **Parallel search**
+Invoked on demand via skill or CLI: `kiok recall "<query>" --project $PWD`
+
+1. **Query embedding** — Ruri v3 ONNX (~300-500ms load + ~30-80ms inference), optional
+2. **Parallel search**
    - FTS5 keyword search (trigram tokenizer) — top K×4 candidates
-   - sqlite-vec vector nearest neighbor search (cosine similarity) — top K×4 candidates
-4. **RRF score fusion** — `score = sum(1 / (k + rank_i))`, k=60
-5. **Time decay** — `decayed_score = score * e^(-lambda * age_days)`, lambda = ln(2)/30 (30-day half-life)
-6. **Policy filtering**
+   - sqlite-vec vector nearest neighbor search (cosine similarity) — top K×4 candidates (if embedding available)
+3. **RRF score fusion** — `score = sum(1 / (k + rank_i))`, k=60
+4. **Time decay** — `decayed_score = score * e^(-lambda * age_days)`, lambda = ln(2)/30 (30-day half-life)
+5. **Policy filtering**
    - global: search all memories
    - project: same project + other projects' global memories
    - isolated: same project only
-7. **Output** — top K results (default 5) as Markdown to stdout
-
-### Recall Output Format
-
-```markdown
-## Related memories
-
-### 2026-03-25 | project: my-app
-Q: How to set up multi-stage builds in Docker Compose
-A: Specify build.target in docker-compose.yml...
-
-### 2026-03-20 | project: my-app
-Q: Build cache not working in CI
-A: Use BuildKit inline cache with GitHub Actions...
-```
-
-### Difference Between recall and search
-
-| | `recall` | `search` |
-|---|---------|----------|
-| Query | Auto-generated from recent session context | User-specified |
-| Output | stdout (for hook injection) | Terminal display (human-readable) |
-| Default count | 5 | 10 |
+6. **Output** — top K results (default 5) as Markdown to stdout
 
 ## SQLite Schema
 

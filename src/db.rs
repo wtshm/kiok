@@ -304,41 +304,6 @@ impl Database {
         Ok(rows)
     }
 
-    /// Return the most recent chunks for a given project, ordered by
-    /// `timestamp DESC`.  Rows with a `NULL` timestamp come last.
-    pub fn recent_chunks(&self, project: &str, limit: usize) -> Result<Vec<ChunkRow>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT c.id, c.session_id, s.project, s.scope,
-                    c.question, c.answer, c.timestamp,
-                    0.0 AS rank
-             FROM chunks c
-             JOIN sessions s ON c.session_id = s.session_id
-             WHERE s.project = ?1
-             ORDER BY c.timestamp DESC
-             LIMIT ?2",
-        )
-        .context("Failed to prepare recent_chunks statement")?;
-
-        let rows = stmt
-            .query_map(params![project, limit as i64], |row| {
-                Ok(ChunkRow {
-                    chunk_id: row.get(0)?,
-                    session_id: row.get(1)?,
-                    project: row.get(2)?,
-                    scope: row.get(3)?,
-                    question: row.get(4)?,
-                    answer: row.get(5)?,
-                    timestamp: row.get(6)?,
-                    rank: row.get(7)?,
-                })
-            })
-            .context("Failed to execute recent_chunks query")?
-            .collect::<Result<Vec<_>, _>>()
-            .context("Failed to collect recent_chunks results")?;
-
-        Ok(rows)
-    }
-
     // -----------------------------------------------------------------------
     // Vector search operations
     // -----------------------------------------------------------------------

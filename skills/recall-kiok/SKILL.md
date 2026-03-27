@@ -5,7 +5,7 @@ description: Search past Claude Code session memories stored in kiok. Use whenev
 
 # kiok recall
 
-Search past Claude Code session conversations stored in kiok's SQLite database with hybrid search (FTS5 trigram + time decay scoring).
+Search past Claude Code session conversations stored in kiok's SQLite database with hybrid search (FTS5 trigram + RRF score fusion + time decay).
 
 ## When to search
 
@@ -24,7 +24,7 @@ If the answer exists in the current codebase (files, git history, CLAUDE.md), pr
 Extract a short, focused query from the user's message and run:
 
 ```bash
-$HOME/.cargo/bin/kiok search "<query>" --project $PWD --count 10
+$HOME/.cargo/bin/kiok recall "<query>" --project $PWD --count 10
 ```
 
 kiok uses FTS5 trigram matching, so:

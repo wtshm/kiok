@@ -12,12 +12,10 @@ use super::save::{db_path, project_name};
 /// Run the recall command.
 ///
 /// 1. Open the database (return silently if no DB exists).
-/// 2. Build queries from the 3 most-recent Q&A chunks.
-/// 3. Load the memory policy for `project_path`.
-/// 4. Search and deduplicate results.
-/// 5. Filter by policy visibility.
-/// 6. Print the top `count` results in Markdown format.
-pub fn run(project_path: &str, count: usize) -> Result<()> {
+/// 2. Run keyword search with RRF + time decay.
+/// 3. Filter by policy visibility.
+/// 4. Print the top `count` results in Markdown format.
+pub fn run(query: &str, project_path: &str, count: usize) -> Result<()> {
     // --- 1. Open the database (silently skip if not present). ---
     let path = db_path()?;
     if !path.exists() {
@@ -25,43 +23,19 @@ pub fn run(project_path: &str, count: usize) -> Result<()> {
     }
     let db = Database::open(&path)?;
 
-    // --- 2. Resolve project name and build queries. ---
     let project = project_name(project_path);
 
-    let recent = db.recent_chunks(&project, 3)?;
-    if recent.is_empty() {
-        return Ok(());
-    }
-    let queries: Vec<String> = recent
-        .iter()
-        .map(|c| c.question.chars().take(80).collect())
-        .collect();
-
-    // --- 3. Load policy scope. ---
+    // --- 2. Load policy scope. ---
     let viewer_scope = policy::load_scope(project_path)?;
 
-    // --- 4. Search and deduplicate. ---
+    // --- 3. Search (over-fetch to compensate for policy filtering). ---
     let config = SearchConfig {
         count: count * 2,
         ..SearchConfig::default()
     };
+    let results = search::keyword_search(&db, query, &config)?;
 
-    let mut seen = std::collections::HashSet::new();
-    let mut results = Vec::new();
-    for q in &queries {
-        if q.trim().is_empty() {
-            continue;
-        }
-        if let Ok(hits) = search::keyword_search(&db, q, &config) {
-            for hit in hits {
-                if seen.insert(hit.chunk_id) {
-                    results.push(hit);
-                }
-            }
-        }
-    }
-
-    // --- 5. Filter by visibility policy. ---
+    // --- 4. Filter by visibility policy. ---
     let filtered: Vec<_> = results
         .into_iter()
         .filter(|r| policy::is_visible(&r.scope, &r.project, viewer_scope, &project))
@@ -72,8 +46,7 @@ pub fn run(project_path: &str, count: usize) -> Result<()> {
         return Ok(());
     }
 
-    // --- 6. Print in Markdown format. ---
-    // Use a distinct header so Claude doesn't confuse this with its built-in memory system.
+    // --- 5. Print in Markdown format. ---
     println!("<kiok-recall>");
     println!("The following are past conversations from previous Claude Code sessions,");
     println!("retrieved by kiok (a session memory engine). Use them as context when relevant.");
@@ -101,4 +74,45 @@ pub fn run(project_path: &str, count: usize) -> Result<()> {
 // Helpers
 // ---------------------------------------------------------------------------
 
-use crate::cmd::search_cmd::truncate;
+/// Truncate `s` to at most `max_chars` Unicode scalar values, appending
+/// `"..."` if the string was truncated.
+pub(crate) fn truncate(s: &str, max_chars: usize) -> String {
+    let mut chars = s.chars();
+    let collected: String = chars.by_ref().take(max_chars).collect();
+    if chars.next().is_some() {
+        format!("{}...", collected)
+    } else {
+        collected
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_truncate_short_string_unchanged() {
+        assert_eq!(truncate("hello", 10), "hello");
+    }
+
+    #[test]
+    fn test_truncate_exact_length_unchanged() {
+        assert_eq!(truncate("hello", 5), "hello");
+    }
+
+    #[test]
+    fn test_truncate_long_string_appends_ellipsis() {
+        let result = truncate("hello world", 5);
+        assert_eq!(result, "hello...");
+    }
+
+    #[test]
+    fn test_truncate_multibyte_characters() {
+        let result = truncate("Docker設定の方法", 6);
+        assert_eq!(result, "Docker...");
+    }
+}

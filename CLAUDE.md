@@ -25,8 +25,7 @@ Search: FTS5 keyword + vector similarity → RRF score fusion + time decay (30-d
 | Command | Purpose |
 |---------|---------|
 | `save` | Parse JSONL session, chunk into Q&A pairs, store in SQLite |
-| `recall` | Build query from recent context, hybrid search, output for session injection |
-| `search` | Manual FTS5 search with optional project filter |
+| `recall` | Hybrid search (FTS5 + RRF + time decay + policy filtering) |
 | `embed` | Background embedding for chunks without vectors |
 | `view` | Launch Axum web UI on port 8718 to browse memories |
 | `import` | Bulk import existing Claude Code sessions |

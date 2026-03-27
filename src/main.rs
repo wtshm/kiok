@@ -25,24 +25,15 @@ enum Commands {
         #[arg(long)]
         project: String,
     },
-    /// Recall related memories for current session
+    /// Search and recall related memories
     Recall {
+        /// Search query
+        query: String,
         /// Project directory path
         #[arg(long)]
         project: String,
         /// Number of results to return
         #[arg(long, default_value = "5")]
-        count: usize,
-    },
-    /// Search memories manually
-    Search {
-        /// Search query
-        query: String,
-        /// Filter by project
-        #[arg(long)]
-        project: Option<String>,
-        /// Number of results to return
-        #[arg(long, default_value = "10")]
         count: usize,
     },
     /// Embed chunks that don't have embeddings yet

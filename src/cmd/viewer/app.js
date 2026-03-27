@@ -1,5 +1,8 @@
 const $ = s => document.querySelector(s);
+const PAGE_SIZE = 100;
 let currentTab = 'chunks';
+let chunksOffset = 0;
+let sessionsOffset = 0;
 
 async function loadStats() {
   const r = await fetch('/api/stats');
@@ -32,10 +35,29 @@ function relTime(ts) {
   return ts.slice(0, 10);
 }
 
-async function loadSessions() {
-  const r = await fetch('/api/sessions?limit=100');
+function renderPager(offset, count, onPrev, onNext) {
+  const page = Math.floor(offset / PAGE_SIZE) + 1;
+  const hasPrev = offset > 0;
+  const hasNext = count === PAGE_SIZE;
+  let html = '<div class="pager">';
+  if (hasPrev) html += `<button class="pager-btn" id="pg-prev">\u2190 Prev</button>`;
+  html += `<span class="pager-info">Page ${page}</span>`;
+  if (hasNext) html += `<button class="pager-btn" id="pg-next">Next \u2192</button>`;
+  html += '</div>';
+  return { html, bind() {
+    const prev = document.getElementById('pg-prev');
+    const next = document.getElementById('pg-next');
+    if (prev) prev.addEventListener('click', onPrev);
+    if (next) next.addEventListener('click', onNext);
+  }};
+}
+
+async function loadSessions(offset) {
+  if (offset === undefined) offset = sessionsOffset;
+  sessionsOffset = offset;
+  const r = await fetch(`/api/sessions?limit=${PAGE_SIZE}&offset=${offset}`);
   const rows = await r.json();
-  if (!rows.length) {
+  if (!rows.length && offset === 0) {
     $('#content').innerHTML = '<div class="empty"><div class="empty-icon">\u2014</div>No sessions yet</div>';
     return;
   }
@@ -51,35 +73,42 @@ async function loadSessions() {
     </div>`;
   }
   html += '</div>';
+  const pg = renderPager(offset, rows.length,
+    () => loadSessions(Math.max(0, offset - PAGE_SIZE)),
+    () => loadSessions(offset + PAGE_SIZE));
+  html += pg.html;
   $('#content').innerHTML = html;
+  pg.bind();
   $('#result-count').textContent = '';
 }
 
-async function loadChunks() {
-  const r = await fetch('/api/chunks?limit=100');
+async function loadChunks(offset) {
+  if (offset === undefined) offset = chunksOffset;
+  chunksOffset = offset;
+  const r = await fetch(`/api/chunks?limit=${PAGE_SIZE}&offset=${offset}`);
   const rows = await r.json();
-  if (!rows.length) {
+  if (!rows.length && offset === 0) {
     $('#content').innerHTML = '<div class="empty"><div class="empty-icon">\u2014</div>No memories yet</div>';
     return;
   }
-  renderChunks(rows);
+  renderChunks(rows, offset);
   $('#result-count').textContent = '';
 }
 
 async function doSearch(q) {
-  if (!q.trim()) { loadChunks(); return; }
-  const r = await fetch('/api/search?q=' + encodeURIComponent(q) + '&limit=50');
+  if (!q.trim()) { chunksOffset = 0; loadChunks(0); return; }
+  const r = await fetch('/api/search?q=' + encodeURIComponent(q) + '&limit=' + PAGE_SIZE);
   const rows = await r.json();
   if (!rows.length) {
     $('#content').innerHTML = '<div class="empty"><div class="empty-icon">\u2014</div>No matches for "' + esc(q) + '"</div>';
     $('#result-count').textContent = '0';
     return;
   }
-  renderChunks(rows);
+  renderChunks(rows, null);
   $('#result-count').textContent = rows.length + ' found';
 }
 
-function renderChunks(rows) {
+function renderChunks(rows, offset) {
   let html = '<div class="cards">';
   for (const c of rows) {
     html += `<div class="card" onclick="this.classList.toggle('expanded')">
@@ -93,7 +122,16 @@ function renderChunks(rows) {
     </div>`;
   }
   html += '</div>';
-  $('#content').innerHTML = html;
+  if (offset !== null) {
+    const pg = renderPager(offset, rows.length,
+      () => { scrollTo(0,0); loadChunks(Math.max(0, offset - PAGE_SIZE)); },
+      () => { scrollTo(0,0); loadChunks(offset + PAGE_SIZE); });
+    html += pg.html;
+    $('#content').innerHTML = html;
+    pg.bind();
+  } else {
+    $('#content').innerHTML = html;
+  }
 }
 
 // Nav
@@ -102,7 +140,8 @@ document.querySelectorAll('.nav-item').forEach(t => t.addEventListener('click', 
   t.classList.add('active');
   currentTab = t.dataset.tab;
   $('#search').value = '';
-  if (currentTab === 'sessions') loadSessions(); else loadChunks();
+  if (currentTab === 'sessions') { sessionsOffset = 0; loadSessions(0); }
+  else { chunksOffset = 0; loadChunks(0); }
 }));
 
 // Search
@@ -114,4 +153,4 @@ $('#search').addEventListener('input', e => {
 
 // Init
 loadStats();
-loadChunks();
+loadChunks(0);

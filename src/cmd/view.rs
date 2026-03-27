@@ -15,9 +15,9 @@ use super::save::db_path;
 type AppState = Arc<Mutex<Database>>;
 
 // Embed static assets at compile time.
-const INDEX_HTML: &str = include_str!("viewer/index.html");
-const STYLE_CSS: &str = include_str!("viewer/style.css");
-const APP_JS: &str = include_str!("viewer/app.js");
+const INDEX_HTML: &str = include_str!("../viewer/index.html");
+const STYLE_CSS: &str = include_str!("../viewer/style.css");
+const APP_JS: &str = include_str!("../viewer/app.js");
 
 // ---------------------------------------------------------------------------
 // Public API

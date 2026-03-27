@@ -47,6 +47,12 @@ enum Commands {
     },
     /// Embed chunks that don't have embeddings yet
     Embed,
+    /// Browse memory database in the browser
+    View {
+        /// Port to listen on
+        #[arg(long, default_value = "8718")]
+        port: u16,
+    },
     /// Import existing Claude Code sessions
     Import,
     /// Show database statistics

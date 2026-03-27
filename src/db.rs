@@ -17,6 +17,17 @@ pub struct ChunkRow {
     pub rank: f64,
 }
 
+/// A session row with chunk count for listing.
+#[derive(Debug, Clone)]
+pub struct SessionInfo {
+    pub session_id: String,
+    pub project: String,
+    pub scope: String,
+    pub started_at: Option<String>,
+    pub imported_at: String,
+    pub chunk_count: i64,
+}
+
 /// Wrapper around a SQLite connection providing all kiok database operations.
 pub struct Database {
     conn: Connection,
@@ -387,6 +398,65 @@ impl Database {
     // -----------------------------------------------------------------------
     // Statistics
     // -----------------------------------------------------------------------
+
+    /// Query sessions with chunk counts, ordered by import time descending.
+    pub fn list_sessions(&self, limit: usize, offset: usize) -> Result<Vec<SessionInfo>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT s.session_id, s.project, s.scope, s.started_at, s.imported_at,
+                    (SELECT count(*) FROM chunks c WHERE c.session_id = s.session_id)
+             FROM sessions s
+             ORDER BY s.imported_at DESC
+             LIMIT ?1 OFFSET ?2"
+        )?;
+
+        let rows = stmt.query_map(params![limit as i64, offset as i64], |row| {
+            Ok(SessionInfo {
+                session_id: row.get(0)?,
+                project: row.get(1)?,
+                scope: row.get(2)?,
+                started_at: row.get(3)?,
+                imported_at: row.get(4)?,
+                chunk_count: row.get(5)?,
+            })
+        })?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
+    }
+
+    /// Query chunks ordered by timestamp descending.
+    pub fn list_chunks(&self, limit: usize, offset: usize) -> Result<Vec<ChunkRow>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT c.id, c.session_id, s.project, s.scope,
+                    c.question, c.answer, c.timestamp, 0.0
+             FROM chunks c
+             JOIN sessions s ON s.session_id = c.session_id
+             ORDER BY c.timestamp DESC
+             LIMIT ?1 OFFSET ?2"
+        )?;
+
+        let rows = stmt.query_map(params![limit as i64, offset as i64], |row| {
+            Ok(ChunkRow {
+                chunk_id: row.get(0)?,
+                session_id: row.get(1)?,
+                project: row.get(2)?,
+                scope: row.get(3)?,
+                question: row.get(4)?,
+                answer: row.get(5)?,
+                timestamp: row.get(6)?,
+                rank: row.get(7)?,
+            })
+        })?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
+    }
 
     /// Return the total number of sessions and chunks stored in the database.
     pub fn stats(&self) -> Result<(i64, i64)> {

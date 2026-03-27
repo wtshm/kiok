@@ -20,6 +20,8 @@ sqlite-vec = "0.1.7"
 bytemuck = "1"
 tokio = { version = "1", features = ["full"] }
 reqwest = { version = "0.12", features = ["stream"] }
+axum = "0.8"
+open = "5"
 
 [dev-dependencies]
 tempfile = "3"

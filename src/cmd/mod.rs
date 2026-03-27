@@ -2,6 +2,7 @@ use anyhow::Result;
 
 pub mod embed;
 pub mod import_cmd;
+pub mod view;
 pub mod recall;
 pub mod save;
 pub mod search_cmd;
@@ -30,6 +31,9 @@ pub fn run(command: crate::Commands) -> Result<()> {
         }
         crate::Commands::Setup => {
             setup::run()
+        }
+        crate::Commands::View { port } => {
+            view::run(port)
         }
     }
 }

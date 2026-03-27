@@ -119,12 +119,18 @@ pub fn run(project_path: &str) -> Result<()> {
     // Embedding loads a 1.2GB ONNX model and is too slow to run inline.
     // Spawn a detached process so save returns immediately.
     if let Ok(kiok_bin) = std::env::current_exe() {
-        let _ = std::process::Command::new(kiok_bin)
-            .arg("embed")
+        let mut cmd = std::process::Command::new(kiok_bin);
+        cmd.arg("embed")
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn();
+            .stderr(std::process::Stdio::null());
+
+        // Propagate ORT_DYLIB_PATH so the child can find the ONNX Runtime dylib.
+        if let Some(dylib_path) = crate::embed::ensure_ort_dylib() {
+            cmd.env("ORT_DYLIB_PATH", dylib_path);
+        }
+
+        let _ = cmd.spawn();
     }
 
     // --- 8. Print summary. ---

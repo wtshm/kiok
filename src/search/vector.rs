@@ -40,7 +40,7 @@ mod tests {
     use super::*;
     use crate::db::Database;
 
-    /// Insert two chunks with 1024-dim embeddings (all-1.0 and all-0.0),
+    /// Insert two chunks with 768-dim embeddings (all-1.0 and all-0.0),
     /// query with all-0.9, and expect the all-1.0 chunk to be nearest.
     #[test]
     fn test_vec_search_returns_nearest() {
@@ -60,9 +60,9 @@ mod tests {
             .expect("expected chunk id 2");
 
         // Embedding of all 1.0 values (un-normalized for test clarity).
-        let emb_ones: Vec<f32> = vec![1.0f32; 1024];
+        let emb_ones: Vec<f32> = vec![1.0f32; 768];
         // Embedding of all 0.0 values.
-        let emb_zeros: Vec<f32> = vec![0.0f32; 1024];
+        let emb_zeros: Vec<f32> = vec![0.0f32; 768];
 
         db.insert_embedding(id1, &emb_ones)
             .expect("insert_embedding 1 failed");
@@ -70,7 +70,7 @@ mod tests {
             .expect("insert_embedding 2 failed");
 
         // Query with all-0.9 — should be closest to the all-1.0 chunk.
-        let query: Vec<f32> = vec![0.9f32; 1024];
+        let query: Vec<f32> = vec![0.9f32; 768];
         let results = search(&db, &query, 2).expect("vec_search failed");
 
         assert_eq!(results.len(), 2, "expected 2 results");

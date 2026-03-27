@@ -4,7 +4,7 @@ use std::path::Path;
 use anyhow::{Context, Result, anyhow};
 use ort::session::Session;
 use ort::value::{Tensor, ValueType};
-use tokenizers::{PaddingParams, Tokenizer};
+use tokenizers::{PaddingParams, TruncationParams, Tokenizer};
 
 use super::EmbeddingBackend;
 
@@ -39,7 +39,15 @@ impl OnnxBackend {
         // Enable batch padding so all sequences in a batch have the same length.
         tokenizer.with_padding(Some(PaddingParams::default()));
 
-        // Infer output dimensions from the model's output metadata, defaulting to 1024.
+        // Truncate to model's max position embeddings (512 for BERT-based models).
+        tokenizer
+            .with_truncation(Some(TruncationParams {
+                max_length: 512,
+                ..TruncationParams::default()
+            }))
+            .map_err(|e| anyhow!("Failed to set truncation: {}", e))?;
+
+        // Infer output dimensions from the model's output metadata, defaulting to 768.
         let dims = session
             .outputs()
             .first()
@@ -51,7 +59,7 @@ impl OnnxBackend {
                 }
             })
             .and_then(|d| if d > 0 { Some(d as usize) } else { None })
-            .unwrap_or(1024);
+            .unwrap_or(768);
 
         Ok(Self {
             session: RefCell::new(session),

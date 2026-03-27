@@ -141,13 +141,44 @@ impl Database {
 
         // vec0 virtual table for approximate nearest-neighbour vector search.
         // chunk_id is a foreign key to chunks.id (enforced by application code).
+        //
+        // Migration: if an older schema with the wrong dimensions exists,
+        // drop and recreate.  Safe because we can always re-embed.
+        self.migrate_chunks_vec()?;
+
         self.conn.execute_batch("
             CREATE VIRTUAL TABLE IF NOT EXISTS chunks_vec USING vec0(
                 chunk_id INTEGER PRIMARY KEY,
-                embedding FLOAT[1024]
+                embedding FLOAT[768]
             );
         ").context("Failed to create chunks_vec virtual table")?;
 
+        Ok(())
+    }
+
+    /// Drop `chunks_vec` if its dimension no longer matches the expected 768.
+    ///
+    /// Detection: the sqlite_master CREATE statement contains `FLOAT[N]`.
+    /// This is a one-shot migration; the table will be recreated immediately
+    /// afterward by the caller.
+    fn migrate_chunks_vec(&self) -> Result<()> {
+        let sql: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='chunks_vec'",
+                [],
+                |row| row.get(0),
+            )
+            .ok();
+
+        if let Some(create_sql) = sql
+            && !create_sql.contains("FLOAT[768]")
+        {
+            eprintln!("kiok: migrating chunks_vec to FLOAT[768]");
+            self.conn
+                .execute_batch("DROP TABLE IF EXISTS chunks_vec;")
+                .context("Failed to drop old chunks_vec")?;
+        }
         Ok(())
     }
 
@@ -318,7 +349,7 @@ impl Database {
     // Vector search operations
     // -----------------------------------------------------------------------
 
-    /// Store a 1024-dim embedding for the given chunk.
+    /// Store a 768-dim embedding for the given chunk.
     ///
     /// The embedding is passed as a BLOB (raw little-endian f32 bytes).
     pub fn insert_embedding(&self, chunk_id: i64, embedding: &[f32]) -> Result<()> {

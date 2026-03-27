@@ -14,14 +14,9 @@ use super::save::db_path;
 
 type AppState = Arc<Mutex<Database>>;
 
-// Embed static assets at compile time.
 const INDEX_HTML: &str = include_str!("../viewer/index.html");
 const STYLE_CSS: &str = include_str!("../viewer/style.css");
 const APP_JS: &str = include_str!("../viewer/app.js");
-
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
 
 pub fn run(port: u16) -> Result<()> {
     let path = db_path()?;
@@ -55,34 +50,28 @@ pub fn run(port: u16) -> Result<()> {
     })
 }
 
-// ---------------------------------------------------------------------------
-// API types
-// ---------------------------------------------------------------------------
-
 #[derive(Serialize)]
-struct StatsResponse {
-    sessions: i64,
-    chunks: i64,
-}
+struct StatsResponse { sessions: i64, chunks: i64 }
 
 #[derive(Serialize)]
 struct SessionRow {
-    session_id: String,
-    project: String,
-    scope: String,
-    started_at: Option<String>,
-    imported_at: String,
-    chunk_count: i64,
+    session_id: String, project: String, scope: String,
+    started_at: Option<String>, imported_at: String, chunk_count: i64,
 }
 
 #[derive(Serialize)]
 struct ChunkResponse {
-    chunk_id: i64,
-    session_id: String,
-    project: String,
-    question: String,
-    answer: String,
-    timestamp: Option<String>,
+    chunk_id: i64, session_id: String, project: String,
+    question: String, answer: String, timestamp: Option<String>,
+}
+
+impl From<crate::db::ChunkRow> for ChunkResponse {
+    fn from(r: crate::db::ChunkRow) -> Self {
+        Self {
+            chunk_id: r.chunk_id, session_id: r.session_id, project: r.project,
+            question: r.question, answer: r.answer, timestamp: r.timestamp,
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -98,15 +87,9 @@ struct PaginationParams {
     limit: usize,
     #[serde(default)]
     offset: usize,
-    #[serde(default)]
-    project: Option<String>,
 }
 
-fn default_limit() -> usize { 50 }
-
-// ---------------------------------------------------------------------------
-// API handlers
-// ---------------------------------------------------------------------------
+fn default_limit() -> usize { 100 }
 
 async fn api_stats(State(state): State<AppState>) -> axum::Json<StatsResponse> {
     let db = state.lock().unwrap();
@@ -141,58 +124,21 @@ async fn api_search(
     axum::Json(rows)
 }
 
-// ---------------------------------------------------------------------------
-// DB queries
-// ---------------------------------------------------------------------------
-
 fn query_sessions(db: &Database, params: &PaginationParams) -> Result<Vec<SessionRow>> {
     let rows = db.list_sessions(params.limit, params.offset)?;
-    Ok(rows
-        .into_iter()
-        .map(|s| SessionRow {
-            session_id: s.session_id,
-            project: s.project,
-            scope: s.scope,
-            started_at: s.started_at,
-            imported_at: s.imported_at,
-            chunk_count: s.chunk_count,
-        })
-        .collect())
+    Ok(rows.into_iter().map(|s| SessionRow {
+        session_id: s.session_id, project: s.project, scope: s.scope,
+        started_at: s.started_at, imported_at: s.imported_at, chunk_count: s.chunk_count,
+    }).collect())
 }
 
 fn query_chunks(db: &Database, params: &PaginationParams) -> Result<Vec<ChunkResponse>> {
-    let rows = db.list_chunks(params.limit, params.offset)?;
-    Ok(rows
-        .into_iter()
-        .map(|r| ChunkResponse {
-            chunk_id: r.chunk_id,
-            session_id: r.session_id,
-            project: r.project,
-            question: r.question,
-            answer: r.answer,
-            timestamp: r.timestamp,
-        })
-        .collect())
+    Ok(db.list_chunks(params.limit, params.offset)?.into_iter().map(ChunkResponse::from).collect())
 }
 
 fn search_chunks(db: &Database, params: &SearchParams) -> Result<Vec<ChunkResponse>> {
-    let fts_results = db.fts_search(&params.q, params.limit)?;
-    Ok(fts_results
-        .into_iter()
-        .map(|r| ChunkResponse {
-            chunk_id: r.chunk_id,
-            session_id: r.session_id,
-            project: r.project,
-            question: r.question,
-            answer: r.answer,
-            timestamp: r.timestamp,
-        })
-        .collect())
+    Ok(db.fts_search(&params.q, params.limit)?.into_iter().map(ChunkResponse::from).collect())
 }
-
-// ---------------------------------------------------------------------------
-// Static asset handlers
-// ---------------------------------------------------------------------------
 
 async fn page_index() -> Html<&'static str> {
     Html(INDEX_HTML)

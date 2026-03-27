@@ -1,6 +1,5 @@
 const $ = (s) => document.querySelector(s);
 const PAGE_SIZE = 100;
-let currentTab = "chunks";
 let chunksOffset = 0;
 let sessionsOffset = 0;
 
@@ -13,11 +12,15 @@ async function loadStats() {
   `;
 }
 
+const _escEl = document.createElement("div");
 function esc(s) {
   if (!s) return "";
-  const d = document.createElement("div");
-  d.textContent = s;
-  return d.innerHTML;
+  _escEl.textContent = s;
+  return _escEl.innerHTML;
+}
+
+function emptyState(msg) {
+  return `<div class="empty">${esc(msg)}</div>`;
 }
 
 function trunc(s, n) {
@@ -65,8 +68,7 @@ async function loadSessions(offset) {
   const r = await fetch(`/api/sessions?limit=${PAGE_SIZE}&offset=${offset}`);
   const rows = await r.json();
   if (!rows.length && offset === 0) {
-    $("#content").innerHTML =
-      '<div class="empty"><div class="empty-icon">\u2014</div>No sessions yet</div>';
+    $("#content").innerHTML = emptyState("No sessions yet");
     return;
   }
   let html =
@@ -100,8 +102,7 @@ async function loadChunks(offset) {
   const r = await fetch(`/api/chunks?limit=${PAGE_SIZE}&offset=${offset}`);
   const rows = await r.json();
   if (!rows.length && offset === 0) {
-    $("#content").innerHTML =
-      '<div class="empty"><div class="empty-icon">\u2014</div>No chunks yet</div>';
+    $("#content").innerHTML = emptyState("No chunks yet");
     return;
   }
   renderChunks(rows, offset);
@@ -119,10 +120,7 @@ async function doSearch(q) {
   );
   const rows = await r.json();
   if (!rows.length) {
-    $("#content").innerHTML =
-      '<div class="empty"><div class="empty-icon">\u2014</div>No matches for "' +
-      esc(q) +
-      '"</div>';
+    $("#content").innerHTML = emptyState("No matches for \u201c" + q + "\u201d");
     $("#result-count").textContent = "0";
     return;
   }
@@ -130,17 +128,29 @@ async function doSearch(q) {
   $("#result-count").textContent = rows.length + " found";
 }
 
+function toggleCard(el) {
+  const isExpanding = !el.classList.contains("expanded");
+  el.classList.toggle("expanded");
+  if (isExpanding) {
+    const a = el.querySelector(".card-a");
+    if (a && !a.dataset.loaded) {
+      a.textContent = a.dataset.full;
+      a.dataset.loaded = "1";
+    }
+  }
+}
+
 function renderChunks(rows, offset) {
   let html = '<div class="cards">';
   for (const c of rows) {
-    html += `<div class="card" onclick="this.classList.toggle('expanded')">
+    html += `<div class="card" onclick="toggleCard(this)">
       <div class="card-head">
         <span class="card-project">${esc(c.project)}</span>
         <span class="card-time">${relTime(c.timestamp)}</span>
       </div>
       <div class="card-q">${esc(trunc(c.question, 200))}</div>
       <div class="card-preview">${esc(trunc(c.answer, 150))}</div>
-      <div class="card-a">${esc(c.answer)}</div>
+      <div class="card-a" data-full="${esc(c.answer)}"></div>
     </div>`;
   }
   html += "</div>";
@@ -148,14 +158,8 @@ function renderChunks(rows, offset) {
     const pg = renderPager(
       offset,
       rows.length,
-      () => {
-        scrollTo(0, 0);
-        loadChunks(Math.max(0, offset - PAGE_SIZE));
-      },
-      () => {
-        scrollTo(0, 0);
-        loadChunks(offset + PAGE_SIZE);
-      },
+      () => { scrollTo(0, 0); loadChunks(Math.max(0, offset - PAGE_SIZE)); },
+      () => { scrollTo(0, 0); loadChunks(offset + PAGE_SIZE); },
     );
     html += pg.html;
     $("#content").innerHTML = html;
@@ -168,13 +172,10 @@ function renderChunks(rows, offset) {
 // Nav
 document.querySelectorAll(".tab").forEach((t) =>
   t.addEventListener("click", () => {
-    document
-      .querySelectorAll(".tab")
-      .forEach((x) => x.classList.remove("active"));
+    document.querySelectorAll(".tab").forEach((x) => x.classList.remove("active"));
     t.classList.add("active");
-    currentTab = t.dataset.tab;
     $("#search").value = "";
-    if (currentTab === "sessions") {
+    if (t.dataset.tab === "sessions") {
       sessionsOffset = 0;
       loadSessions(0);
     } else {

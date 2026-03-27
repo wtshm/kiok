@@ -10,27 +10,20 @@
 </head>
 <body>
 <div class="shell">
-  <aside class="sidebar">
-    <div class="logo">
-      <span class="logo-mark">kiok</span>
-    </div>
-    <div class="stats-grid" id="stats"></div>
-    <nav class="nav">
-      <div class="nav-item active" data-tab="chunks">
-        <span class="nav-icon">&#9638;</span> Chunks
-      </div>
-      <div class="nav-item" data-tab="sessions">
-        <span class="nav-icon">&#9776;</span> Sessions
-      </div>
+  <header class="topbar">
+    <span class="logo-mark">kiok</span>
+    <div class="stats-row" id="stats"></div>
+    <nav class="tabs">
+      <div class="tab active" data-tab="chunks">Chunks</div>
+      <div class="tab" data-tab="sessions">Sessions</div>
     </nav>
-    <div class="sidebar-footer">~/.kiok/memory.db</div>
-  </aside>
-  <main class="main">
     <div class="search-wrap">
       <span class="search-icon">&#8981;</span>
-      <input class="search-input" id="search" type="text" placeholder="Search memories...">
+      <input class="search-input" id="search" type="text" placeholder="Search...">
       <span class="search-count" id="result-count"></span>
     </div>
+  </header>
+  <main class="main">
     <div id="content"></div>
   </main>
 </div>

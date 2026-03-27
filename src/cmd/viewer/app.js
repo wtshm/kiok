@@ -8,8 +8,8 @@ async function loadStats() {
   const r = await fetch('/api/stats');
   const d = await r.json();
   $('#stats').innerHTML = `
-    <div class="stat-card"><div class="stat-val">${d.sessions}</div><div class="stat-lbl">sessions</div></div>
-    <div class="stat-card"><div class="stat-val">${d.chunks}</div><div class="stat-lbl">memories</div></div>
+    <span class="stat-item"><span class="stat-val">${d.sessions}</span> sessions</span>
+    <span class="stat-item"><span class="stat-val">${d.chunks}</span> chunks</span>
   `;
 }
 
@@ -135,8 +135,8 @@ function renderChunks(rows, offset) {
 }
 
 // Nav
-document.querySelectorAll('.nav-item').forEach(t => t.addEventListener('click', () => {
-  document.querySelectorAll('.nav-item').forEach(x => x.classList.remove('active'));
+document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
+  document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
   t.classList.add('active');
   currentTab = t.dataset.tab;
   $('#search').value = '';

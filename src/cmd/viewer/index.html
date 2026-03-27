@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kiok</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar">
+    <div class="logo">
+      <span class="logo-mark">kiok</span>
+      <span class="logo-ver">v0.1</span>
+    </div>
+    <div class="stats-grid" id="stats"></div>
+    <nav class="nav">
+      <div class="nav-item active" data-tab="chunks">
+        <span class="nav-icon">&#9638;</span> Memories
+      </div>
+      <div class="nav-item" data-tab="sessions">
+        <span class="nav-icon">&#9776;</span> Sessions
+      </div>
+    </nav>
+    <div class="sidebar-footer">~/.kiok/memory.db</div>
+  </aside>
+  <main class="main">
+    <div class="search-wrap">
+      <span class="search-icon">&#8981;</span>
+      <input class="search-input" id="search" type="text" placeholder="Search memories...">
+      <span class="search-count" id="result-count"></span>
+    </div>
+    <div id="content"></div>
+  </main>
+</div>
+<script src="/app.js"></script>
+</body>
+</html>

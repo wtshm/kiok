@@ -43,8 +43,10 @@ pub fn run(port: u16) -> Result<()> {
         let listener = tokio::net::TcpListener::bind(&addr).await
             .context(format!("Failed to bind to {}", addr))?;
 
-        eprintln!("kiok view: http://{}", addr);
-        let _ = open::that(format!("http://{}", addr));
+        let url = format!("http://{}", addr);
+        eprintln!("Listening on {}", url);
+        eprintln!("Press Ctrl+C to stop");
+        let _ = open::that(&url);
 
         axum::serve(listener, app).await.context("Server error")
     })

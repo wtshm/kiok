@@ -20,7 +20,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans);
           border-bottom: 1px solid var(--border); position: sticky; top: 0;
           background: var(--bg); z-index: 10; flex-wrap: wrap; }
 .logo-mark { font-family: var(--mono); font-size: 1.1rem; font-weight: 500;
-             color: var(--accent); letter-spacing: -0.03em; flex-shrink: 0; }
+             color: var(--text); letter-spacing: -0.03em; flex-shrink: 0; }
 .stats-row { display: flex; gap: 12px; font-family: var(--mono); font-size: 0.75rem;
              color: var(--text3); flex-shrink: 0; }
 .stat-item { display: flex; gap: 4px; }

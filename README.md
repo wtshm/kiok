@@ -14,9 +14,11 @@ SessionEnd Hook                      SessionStart Hook
  Parse JSONL                         Build query from recent context
  -> Filter noise                     -> FTS5 keyword search
  -> Split into Q&A chunks            -> Vector similarity search
- -> Embed (Ruri v3 ONNX)             -> RRF score fusion + time decay
- -> Store in SQLite                  -> Policy filtering
-    (FTS5 + sqlite-vec)              -> Output to stdout (context injection)
+ -> Store in SQLite (FTS5)           -> RRF score fusion + time decay
+                                     -> Policy filtering
+ kiok embed (background)             -> Output to stdout (context injection)
+ -> Embed (Ruri v3 ONNX)
+ -> Update sqlite-vec vectors
 ```
 
 ## Features
@@ -26,6 +28,7 @@ SessionEnd Hook                      SessionStart Hook
 - **Japanese-first** — Ruri v3 embeddings + trigram tokenizer
 - **Privacy-preserving** — All data stays local, no external API calls
 - **Policy control** — `global` / `project` / `isolated` scopes for cross-project memory visibility
+- **Web UI** — Built-in browser interface for browsing sessions and searching memories (`kiok view`)
 - **Zero manual operation** — Hooks handle save and recall automatically
 
 ## Quick Start
@@ -42,6 +45,9 @@ kiok import
 
 # Manual search
 kiok search "Docker configuration"
+
+# Browse memories in the browser
+kiok view
 
 # Database statistics
 kiok stats
@@ -82,6 +88,10 @@ Control memory visibility per project by creating `<project>/.claude/memory-poli
 | `isolated` | No | No |
 
 Default is `global` when no policy file exists.
+
+## Skill Integration
+
+kiok includes a Claude Code skill (`skills/recall-kiok/`) that lets the agent search past sessions on demand. Install it as a custom skill to enable queries like "what did we do last time?" or "how did we fix that bug?".
 
 ## Data Storage
 

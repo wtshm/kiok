@@ -14,9 +14,24 @@ cargo clippy
 
 kiok is a Rust CLI memory engine for Claude Code. It archives session conversations as Q&A chunks in SQLite with hybrid search (FTS5 trigram + sqlite-vec vector search).
 
-Pipeline: JSONL parse → noise filter → Q&A chunk → embed (ONNX/Ruri v3) → SQLite (FTS5 + sqlite-vec)
+Save pipeline: JSONL parse → noise filter → Q&A chunk → SQLite (FTS5)
+
+Embed pipeline (background): load chunks without vectors → Ruri v3 ONNX → update sqlite-vec
 
 Search: FTS5 keyword + vector similarity → RRF score fusion + time decay (30-day half-life) → policy filtering
+
+### Commands
+
+| Command | Purpose |
+|---------|---------|
+| `save` | Parse JSONL session, chunk into Q&A pairs, store in SQLite |
+| `recall` | Build query from recent context, hybrid search, output for session injection |
+| `search` | Manual FTS5 search with optional project filter |
+| `embed` | Background embedding for chunks without vectors |
+| `view` | Launch Axum web UI on port 8718 to browse memories |
+| `import` | Bulk import existing Claude Code sessions |
+| `stats` | Show database statistics |
+| `setup` | Download Ruri v3 model, init DB, print hook config |
 
 ## Key Conventions
 
@@ -30,3 +45,5 @@ Search: FTS5 keyword + vector similarity → RRF score fusion + time decay (30-d
 - Database: `~/.kiok/memory.db`
 - Models: `~/.kiok/models/ruri-v3-310m/`
 - Policy: `<project>/.claude/memory-policy.json`
+- Viewer assets: `src/viewer/` (embedded via `include_str!`)
+- Skill: `skills/recall-kiok/SKILL.md`

@@ -1,6 +1,6 @@
 ---
 name: recall-kiok
-description: Search past Claude Code session memories stored in kiok. Use whenever the user asks about previous sessions, past work, earlier decisions, work history, or needs context from prior conversations. Trigger on questions about what was done, how something was solved, what the reasoning was, what happened last time, or any reference to past session context. Also trigger on session ID patterns (UUIDs). If the answer likely comes from a past conversation rather than the current codebase or general knowledge, use this skill. Even vague references like "that thing we did" or "the approach from before" should trigger this.
+description: Use whenever the user asks about previous sessions, past work, earlier decisions, work history, or needs context from prior conversations. Trigger on questions about what was done, how something was solved, what the reasoning was, what happened last time, or any reference to past session context. Also trigger on session ID patterns (UUIDs). Use when the answer likely comes from a past conversation rather than the current codebase or general knowledge.
 ---
 
 # kiok recall
@@ -24,7 +24,7 @@ If the answer exists in the current codebase (files, git history, CLAUDE.md), pr
 Extract a short, focused query from the user's message and run:
 
 ```bash
-$HOME/.cargo/bin/kiok recall "<query>" --project $PWD --count 10
+kiok recall "<query>" --project $PWD --count 10
 ```
 
 kiok uses FTS5 trigram matching, so:

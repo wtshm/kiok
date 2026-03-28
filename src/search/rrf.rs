@@ -109,19 +109,39 @@ mod tests {
     fn test_rrf_fusion_combines_scores() {
         let now = Utc.with_ymd_and_hms(2024, 6, 1, 0, 0, 0).unwrap();
 
+        // chunk 1: appears in both lists at rank 1
+        // chunk 2: FTS only at rank 2
+        // chunk 3: vector only at rank 2
         let fts = vec![make_sr(1, 1, None), make_sr(2, 2, None)];
         let vec = vec![make_sr(1, 1, None), make_sr(3, 2, None)];
 
         let results = fuse(&fts, &vec, 30.0, now);
 
+        assert_eq!(results.len(), 3, "should have 3 unique chunks");
         assert_eq!(results[0].chunk.chunk_id, 1, "chunk appearing in both lists must rank highest");
 
-        let expected = 2.0 / (RRF_K + 1.0);
+        // chunk 1: 2 contributions from rank 1
+        let expected_dual = 2.0 / (RRF_K + 1.0);
         assert!(
-            (results[0].score - expected).abs() < 1e-10,
+            (results[0].score - expected_dual).abs() < 1e-10,
             "chunk 1 score mismatch: got {}, expected {}",
             results[0].score,
-            expected
+            expected_dual
+        );
+
+        // chunks 2 and 3: 1 contribution each from rank 2
+        let expected_single = 1.0 / (RRF_K + 2.0);
+        let r2 = results.iter().find(|r| r.chunk.chunk_id == 2).expect("chunk 2 missing");
+        let r3 = results.iter().find(|r| r.chunk.chunk_id == 3).expect("chunk 3 missing");
+        assert!(
+            (r2.score - expected_single).abs() < 1e-10,
+            "chunk 2 score mismatch: got {}, expected {}",
+            r2.score, expected_single
+        );
+        assert!(
+            (r3.score - expected_single).abs() < 1e-10,
+            "chunk 3 score mismatch: got {}, expected {}",
+            r3.score, expected_single
         );
     }
 

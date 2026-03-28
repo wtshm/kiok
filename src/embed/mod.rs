@@ -68,27 +68,33 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_try_load_backend_returns_none_for_missing_model() {
+    fn test_try_load_backend_returns_none_for_empty_dir() {
         let tmp = std::env::temp_dir().join("kiok-test-empty-model-dir");
         let _ = std::fs::create_dir_all(&tmp);
+        // Ensure no model.onnx exists.
+        let _ = std::fs::remove_file(tmp.join("model.onnx"));
 
-        // No model.onnx in the directory — should return None.
         let result = try_load_backend(&tmp);
-        assert!(result.is_none());
+        assert!(result.is_none(), "should return None when model.onnx is absent");
 
         let _ = std::fs::remove_dir(&tmp);
     }
 
     #[test]
-    fn test_ensure_ort_dylib_returns_some_when_installed() {
-        // This test validates the runtime environment.
-        // If onnxruntime is installed, ensure_ort_dylib should find it.
-        // If not installed, it should return None (not panic).
-        let result = ensure_ort_dylib();
+    fn test_try_load_backend_returns_none_for_nonexistent_dir() {
+        let result = try_load_backend(std::path::Path::new("/nonexistent/path"));
+        assert!(result.is_none(), "should return None for nonexistent directory");
+    }
 
-        if std::path::Path::new("/opt/homebrew/lib/libonnxruntime.dylib").exists() {
-            assert!(result.is_some(), "should find Homebrew onnxruntime");
+    #[test]
+    fn test_ensure_ort_dylib_is_consistent_and_valid() {
+        let first = ensure_ort_dylib();
+        let second = ensure_ort_dylib();
+        assert_eq!(first, second, "cached result must be stable across calls");
+
+        // If a path was found, verify it actually exists on disk.
+        if let Some(ref path) = first {
+            assert!(path.exists(), "returned dylib path should exist on disk");
         }
-        // Either way, the function must not panic.
     }
 }

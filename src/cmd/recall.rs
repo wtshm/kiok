@@ -142,14 +142,13 @@ mod tests {
     }
 
     #[test]
-    fn test_try_embed_query_returns_none_without_model() {
-        // With a nonexistent model directory, try_embed_query should
-        // gracefully return None (fallback to FTS-only search).
+    fn test_try_embed_query_returns_option_without_panic() {
+        // try_embed_query must return Some (if model+onnxruntime installed)
+        // or None (if not) — never panic.
         let result = try_embed_query("test query");
-
-        // We can't guarantee the model is installed in CI, so we just
-        // verify it doesn't panic.  If model IS installed, it returns Some.
-        // If not, it returns None.  Both are valid.
-        let _ = result;
+        match result {
+            Some(ref vec) => assert!(!vec.is_empty(), "embedding should be non-empty"),
+            None => {} // Graceful fallback when model is unavailable.
+        }
     }
 }

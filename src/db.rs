@@ -488,7 +488,7 @@ mod tests {
         let db = make_db();
 
         // Each table must appear in sqlite_master.
-        for table in &["sessions", "chunks", "chunks_fts"] {
+        for table in &["sessions", "chunks", "chunks_fts", "chunks_vec"] {
             let count: i64 = db
                 .conn
                 .query_row(
@@ -673,19 +673,38 @@ mod tests {
 
     #[test]
     fn test_migrate_chunks_vec_recreates_on_dimension_change() {
-        // Open a DB and manually create chunks_vec with wrong dimensions.
-        let db = Database::open_in_memory().expect("open_in_memory failed");
+        // Create a DB file with old 1024-dim chunks_vec, then reopen via
+        // Database::open to verify migration drops and recreates with 768.
+        let tmp = std::env::temp_dir().join("kiok-test-migrate.db");
+        let _ = std::fs::remove_file(&tmp);
 
-        // The standard open_in_memory already creates chunks_vec with FLOAT[768].
-        // Verify it exists.
-        let sql: String = db
-            .conn
-            .query_row(
+        // Create old-schema DB on disk.
+        {
+            Database::register_vec_extension();
+            let conn = Connection::open(&tmp).unwrap();
+            conn.execute_batch("
+                PRAGMA journal_mode=WAL;
+                CREATE TABLE sessions (session_id TEXT PRIMARY KEY, project TEXT NOT NULL, scope TEXT NOT NULL DEFAULT 'global', started_at TEXT, imported_at TEXT NOT NULL DEFAULT (datetime('now')));
+                CREATE TABLE chunks (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, uuid TEXT, question TEXT NOT NULL, answer TEXT NOT NULL, timestamp TEXT, token_count INTEGER);
+                CREATE VIRTUAL TABLE chunks_fts USING fts5(question, answer, content_rowid='id', content='chunks', tokenize='trigram');
+                CREATE VIRTUAL TABLE chunks_vec USING vec0(chunk_id INTEGER PRIMARY KEY, embedding FLOAT[1024]);
+            ").unwrap();
+
+            let sql: String = conn.query_row(
                 "SELECT sql FROM sqlite_master WHERE type='table' AND name='chunks_vec'",
-                [],
-                |row| row.get(0),
-            )
-            .expect("chunks_vec should exist");
-        assert!(sql.contains("768"), "should be 768-dim after creation");
+                [], |row| row.get(0),
+            ).unwrap();
+            assert!(sql.contains("1024"), "should start as 1024-dim");
+        }
+
+        // Reopen with Database::open — triggers migration.
+        let db = Database::open(&tmp).expect("reopen failed");
+        let sql: String = db.conn.query_row(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='chunks_vec'",
+            [], |row| row.get(0),
+        ).unwrap();
+        assert!(sql.contains("768"), "should be migrated to 768-dim, got: {}", sql);
+
+        let _ = std::fs::remove_file(&tmp);
     }
 }

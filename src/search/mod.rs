@@ -141,18 +141,21 @@ mod tests {
         let query_emb = vec![0.9f32; 768];
         let results = hybrid_search(&db, "Docker", Some(&query_emb), &config).unwrap();
 
-        // Docker chunk should appear: it matches both FTS ("Docker") and vector (nearest).
-        assert!(!results.is_empty());
-        assert!(results[0].chunk.question.contains("Docker"));
+        // Both chunks should appear: Docker via FTS+vector, Rust via vector only.
+        assert_eq!(results.len(), 2, "both chunks should appear in hybrid results");
 
         // Docker chunk gets RRF contributions from both FTS and vector,
-        // so it should score higher than Rust chunk (vector-only match).
-        if results.len() > 1 {
-            assert!(
-                results[0].score >= results[1].score,
-                "Docker chunk should have highest score from dual RRF contributions"
-            );
-        }
+        // so it must rank first.
+        assert!(
+            results[0].chunk.question.contains("Docker"),
+            "Docker chunk should rank first due to dual RRF contributions"
+        );
+        assert!(
+            results[0].score > results[1].score,
+            "Docker score ({}) should exceed Rust score ({})",
+            results[0].score,
+            results[1].score
+        );
     }
 
     #[test]
@@ -164,16 +167,26 @@ mod tests {
         let keyword = keyword_search(&db, "Docker", &config).unwrap();
 
         assert_eq!(hybrid.len(), keyword.len());
+        for (h, k) in hybrid.iter().zip(keyword.iter()) {
+            assert_eq!(h.chunk.chunk_id, k.chunk.chunk_id);
+            assert!(
+                (h.score - k.score).abs() < 1e-10,
+                "scores should match: hybrid={}, keyword={}",
+                h.score, k.score
+            );
+        }
     }
 
     #[test]
     fn test_hybrid_search_respects_count_limit() {
         let db = seed_db();
+        // seed_db has 2 chunks; both match via vector search.
+        // With count=1, only the top result should be returned.
         let config = SearchConfig { count: 1, ..SearchConfig::default() };
 
         let query_emb = vec![0.9f32; 768];
         let results = hybrid_search(&db, "Docker", Some(&query_emb), &config).unwrap();
 
-        assert!(results.len() <= 1, "should respect count limit");
+        assert_eq!(results.len(), 1, "should truncate to count=1");
     }
 }

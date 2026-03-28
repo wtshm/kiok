@@ -1,12 +1,37 @@
+use std::fs::OpenOptions;
+use std::os::unix::io::AsRawFd;
+
 use anyhow::Result;
 
 use crate::db::Database;
 use crate::embed::{self, EmbeddingBackend};
-use super::save::{db_path, model_dir};
+use super::save::{data_dir, db_path, model_dir};
 
 /// Maximum number of chunks to embed in a single ONNX inference call.
 /// Kept small to avoid OOM on machines with limited RAM (~1.2GB model + batch).
 const BATCH_SIZE: usize = 8;
+
+/// Acquire an exclusive, non-blocking file lock on `~/.kiok/embed.lock`.
+///
+/// Returns the open `File` (holding the flock) on success, or `None` if
+/// another embed process already holds the lock.  The lock is released
+/// automatically when the returned `File` is dropped.
+fn acquire_lock() -> Option<std::fs::File> {
+    let lock_path = data_dir().ok()?.join("embed.lock");
+    let file = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(lock_path)
+        .ok()?;
+
+    let ret = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+    if ret == 0 {
+        Some(file)
+    } else {
+        None
+    }
+}
 
 /// Embed all chunks that don't yet have embeddings.
 ///
@@ -14,6 +39,11 @@ const BATCH_SIZE: usize = 8;
 /// It loads the ONNX model once and processes all un-embedded chunks in
 /// small batches to keep peak memory manageable.
 pub fn run() -> Result<()> {
+    let _lock = match acquire_lock() {
+        Some(f) => f,
+        None => return Ok(()),
+    };
+
     let dir = model_dir()?;
     let backend = match embed::try_load_backend(&dir) {
         Some(b) => b,
@@ -25,6 +55,12 @@ pub fn run() -> Result<()> {
         return Ok(());
     }
     let db = Database::open(path)?;
+
+    // Clean up embeddings whose chunks have been deleted.
+    let orphaned = db.delete_orphaned_embeddings()?;
+    if orphaned > 0 {
+        eprintln!("embed: cleaned up {} orphaned embeddings", orphaned);
+    }
 
     let mut total = 0usize;
     loop {

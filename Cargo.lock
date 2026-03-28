@@ -1069,6 +1069,7 @@ dependencies = [
  "chrono",
  "clap",
  "dirs",
+ "libc",
  "open",
  "ort",
  "reqwest",

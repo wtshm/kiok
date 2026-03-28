@@ -18,8 +18,19 @@ pub struct ChunkRow {
 
 impl ChunkRow {
     /// Concatenate question and answer for embedding input.
+    ///
+    /// The result is capped at 8 000 bytes to prevent large intermediate
+    /// allocations.  The tokenizer already truncates to 512 tokens, so this
+    /// limit only guards against extreme inputs.
     pub fn embed_text(&self) -> String {
-        format!("{} {}", self.question, self.answer)
+        const MAX_BYTES: usize = 8000;
+        // Fast path: skip format + truncate when inputs are small.
+        let combined_len = self.question.len() + 1 + self.answer.len();
+        if combined_len <= MAX_BYTES {
+            return format!("{} {}", self.question, self.answer);
+        }
+        let full = format!("{} {}", self.question, self.answer);
+        full[..full.floor_char_boundary(MAX_BYTES)].to_owned()
     }
 
     /// Construct from a rusqlite Row with the standard 7-column layout:
@@ -342,6 +353,19 @@ impl Database {
     // -----------------------------------------------------------------------
     // Vector search operations
     // -----------------------------------------------------------------------
+
+    /// Delete embeddings in `chunks_vec` whose `chunk_id` no longer exists
+    /// in the `chunks` table.  Returns the number of rows removed.
+    pub fn delete_orphaned_embeddings(&self) -> Result<usize> {
+        let count = self
+            .conn
+            .execute(
+                "DELETE FROM chunks_vec WHERE NOT EXISTS (SELECT 1 FROM chunks WHERE chunks.id = chunks_vec.chunk_id)",
+                [],
+            )
+            .context("Failed to delete orphaned embeddings")?;
+        Ok(count)
+    }
 
     /// Store a 768-dim embedding for the given chunk.
     ///

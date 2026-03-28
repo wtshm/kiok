@@ -4,6 +4,14 @@ use rusqlite::{Connection, ffi::sqlite3_auto_extension, params};
 use sqlite_vec::sqlite3_vec_init;
 use std::path::Path;
 
+/// Aggregate counts for the database.
+#[derive(Debug, Clone)]
+pub struct Stats {
+    pub sessions: i64,
+    pub chunks: i64,
+    pub embeddings: i64,
+}
+
 /// A single chunk row combining chunk and session data.
 #[derive(Debug, Clone)]
 pub struct ChunkRow {
@@ -474,8 +482,8 @@ impl Database {
         Ok(rows)
     }
 
-    /// Return the total number of sessions and chunks stored in the database.
-    pub fn stats(&self) -> Result<(i64, i64)> {
+    /// Return aggregate counts for the database.
+    pub fn stats(&self) -> Result<Stats> {
         let sessions: i64 = self.conn.query_row(
             "SELECT COUNT(*) FROM sessions",
             [],
@@ -490,7 +498,14 @@ impl Database {
         )
         .context("Failed to count chunks")?;
 
-        Ok((sessions, chunks))
+        let embeddings: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM chunks_vec",
+            [],
+            |row| row.get(0),
+        )
+        .context("Failed to count embeddings")?;
+
+        Ok(Stats { sessions, chunks, embeddings })
     }
 }
 
@@ -561,9 +576,9 @@ mod tests {
             .expect("insert_chunk failed");
         assert!(id.is_some(), "expected a chunk id");
 
-        let (sessions, chunks) = db.stats().expect("stats failed");
-        assert_eq!(sessions, 1);
-        assert_eq!(chunks, 1);
+        let s = db.stats().expect("stats failed");
+        assert_eq!(s.sessions, 1);
+        assert_eq!(s.chunks, 1);
     }
 
     #[test]
@@ -584,8 +599,8 @@ mod tests {
             .expect("second insert failed");
         assert!(second.is_none(), "duplicate UUID must return None");
 
-        let (_, chunks) = db.stats().expect("stats failed");
-        assert_eq!(chunks, 1, "only one row should exist");
+        let s = db.stats().expect("stats failed");
+        assert_eq!(s.chunks, 1, "only one row should exist");
     }
 
     #[test]
@@ -648,8 +663,8 @@ mod tests {
         })
         .unwrap();
 
-        let (_, chunks) = db.stats().unwrap();
-        assert_eq!(chunks, 2, "both chunks should be committed");
+        let s = db.stats().unwrap();
+        assert_eq!(s.chunks, 2, "both chunks should be committed");
     }
 
     #[test]
@@ -663,8 +678,8 @@ mod tests {
         });
 
         assert!(result.is_err());
-        let (_, chunks) = db.stats().unwrap();
-        assert_eq!(chunks, 0, "chunk should be rolled back");
+        let s = db.stats().unwrap();
+        assert_eq!(s.chunks, 0, "chunk should be rolled back");
     }
 
     #[test]

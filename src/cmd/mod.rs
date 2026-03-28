@@ -18,7 +18,8 @@ pub fn run(command: crate::Commands) -> Result<()> {
             recall::run(&query, &project, count)
         }
         crate::Commands::Embed => {
-            embed::run()
+            embed::run()?;
+            Ok(())
         }
         crate::Commands::Import => {
             import_cmd::run()

@@ -33,26 +33,36 @@ fn acquire_lock() -> Option<std::fs::File> {
     }
 }
 
+/// Result of an embed run.
+pub enum EmbedOutcome {
+    /// Another embed process holds the lock.
+    Locked,
+    /// Model or database not available.
+    Unavailable,
+    /// Completed successfully; `usize` is the number of chunks embedded.
+    Done(usize),
+}
+
 /// Embed all chunks that don't yet have embeddings.
 ///
 /// This command is designed to run in the background after `kiok save`.
 /// It loads the ONNX model once and processes all un-embedded chunks in
 /// small batches to keep peak memory manageable.
-pub fn run() -> Result<()> {
+pub fn run() -> Result<EmbedOutcome> {
     let _lock = match acquire_lock() {
         Some(f) => f,
-        None => return Ok(()),
+        None => return Ok(EmbedOutcome::Locked),
     };
 
     let dir = model_dir()?;
     let backend = match embed::try_load_backend(&dir) {
         Some(b) => b,
-        None => return Ok(()),
+        None => return Ok(EmbedOutcome::Unavailable),
     };
 
     let path = db_path()?;
     if !path.exists() {
-        return Ok(());
+        return Ok(EmbedOutcome::Unavailable);
     }
     let db = Database::open(path)?;
 
@@ -90,5 +100,5 @@ pub fn run() -> Result<()> {
     if total > 0 {
         eprintln!("embed: processed {} chunks", total);
     }
-    Ok(())
+    Ok(EmbedOutcome::Done(total))
 }

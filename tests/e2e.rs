@@ -172,8 +172,9 @@ fn test_stats_after_save() {
     assert!(out.status.success());
 
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(stdout.contains("Sessions: 1"), "should show 1 session, got: {}", stdout);
-    assert!(stdout.contains("Chunks:   2"), "should show 2 chunks, got: {}", stdout);
+    assert!(stdout.contains("Sessions:   1"), "should show 1 session, got: {}", stdout);
+    assert!(stdout.contains("Chunks:     2"), "should show 2 chunks, got: {}", stdout);
+    assert!(stdout.contains("Embeddings: 0 / 2"), "should show 0/2 embeddings, got: {}", stdout);
 }
 
 #[test]

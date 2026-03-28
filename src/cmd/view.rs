@@ -95,8 +95,8 @@ fn default_limit() -> usize { 100 }
 
 async fn api_stats(State(state): State<AppState>) -> axum::Json<StatsResponse> {
     let db = state.lock().unwrap();
-    let (sessions, chunks) = db.stats().unwrap_or((0, 0));
-    axum::Json(StatsResponse { sessions, chunks })
+    let s = db.stats().unwrap_or(crate::db::Stats { sessions: 0, chunks: 0, embeddings: 0 });
+    axum::Json(StatsResponse { sessions: s.sessions, chunks: s.chunks })
 }
 
 async fn api_sessions(

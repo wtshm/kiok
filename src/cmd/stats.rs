@@ -19,7 +19,7 @@ pub fn run() -> Result<()> {
     }
 
     let db = Database::open(&path)?;
-    let (sessions, chunks) = db.stats()?;
+    let s = db.stats()?;
 
     // Display the path relative to home if possible, otherwise absolute.
     let display_path = if let Ok(home) = std::env::var("HOME") {
@@ -33,9 +33,10 @@ pub fn run() -> Result<()> {
         path.display().to_string()
     };
 
-    println!("Database: {}", display_path);
-    println!("Sessions: {}", sessions);
-    println!("Chunks:   {}", chunks);
+    println!("Database:   {}", display_path);
+    println!("Sessions:   {}", s.sessions);
+    println!("Chunks:     {}", s.chunks);
+    println!("Embeddings: {} / {}", s.embeddings, s.chunks);
 
     Ok(())
 }

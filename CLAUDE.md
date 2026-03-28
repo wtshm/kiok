@@ -30,7 +30,7 @@ Search: FTS5 keyword + vector similarity → RRF score fusion + time decay (30-d
 | `view` | Launch Axum web UI on port 8718 to browse memories |
 | `import` | Bulk import existing Claude Code sessions |
 | `stats` | Show database statistics |
-| `setup` | Download Ruri v3 model, init DB, print hook config |
+| `setup` | Interactive wizard: download model, init DB, configure hooks, import, embed |
 
 ## Key Conventions
 

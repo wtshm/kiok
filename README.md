@@ -41,11 +41,10 @@ SessionEnd Hook                      Skill (on demand)
 curl -fsSL https://raw.githubusercontent.com/wtshm/kiok/main/install.sh | sh
 ```
 
-This installs the `kiok` binary to `~/.local/bin` and the `recall-kiok` Claude Code skill via `npx skills`.
-
-Then run the interactive setup:
+Then install the skill and run setup:
 
 ```bash
+npx skills install wtshm/kiok
 kiok setup
 ```
 

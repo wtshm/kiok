@@ -70,14 +70,7 @@ case ":${PATH}:" in
     ;;
 esac
 
-# Install Claude Code skill
-if command -v npx >/dev/null 2>&1; then
-  echo "Installing recall-kiok skill..."
-  npx skills install "${REPO}"
-else
-  echo "npx not found — skip skill install. Run manually:"
-  echo "  npx skills install ${REPO}"
-fi
-
 echo ""
-echo "Run 'kiok setup' to complete setup."
+echo "Next steps:"
+echo "  1. npx skills install ${REPO}"
+echo "  2. kiok setup"

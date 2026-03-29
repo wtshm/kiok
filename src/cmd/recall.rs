@@ -11,7 +11,41 @@ use super::save::{db_path, project_name};
 // Public API
 // ---------------------------------------------------------------------------
 
-/// Run the recall command.
+/// Look up all chunks in a session by ID prefix and print them.
+pub fn run_session(session_prefix: &str, count: usize) -> Result<()> {
+    let path = db_path()?;
+    if !path.exists() {
+        return Ok(());
+    }
+    let db = Database::open(&path)?;
+
+    let chunks = db.chunks_by_session_prefix(session_prefix, count)?;
+    if chunks.is_empty() {
+        return Ok(());
+    }
+
+    println!("<kiok>");
+    println!("Session chunks matching \"{}\":", session_prefix);
+    println!();
+
+    for c in &chunks {
+        let date = c
+            .timestamp
+            .as_deref()
+            .and_then(|ts| ts.get(..10))
+            .unwrap_or("(no date)");
+
+        println!("- [{}] [session: {}] [project: {}]", date, c.session_id, c.project);
+        println!("  User: {}", truncate(&c.question, 200));
+        println!("  Assistant: {}", truncate(&c.answer, 500));
+        println!();
+    }
+
+    println!("</kiok>");
+    Ok(())
+}
+
+/// Run the recall command with hybrid search.
 ///
 /// 1. Open the database (return silently if no DB exists).
 /// 2. Run hybrid search (FTS5 + vector) with RRF + time decay.

@@ -146,6 +146,9 @@ impl Database {
             CREATE UNIQUE INDEX IF NOT EXISTS idx_chunks_uuid
                 ON chunks(uuid) WHERE uuid IS NOT NULL;
 
+            CREATE INDEX IF NOT EXISTS idx_chunks_session_id
+                ON chunks(session_id);
+
             CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
                 question,
                 answer,
@@ -478,6 +481,26 @@ impl Database {
 
         let rows = stmt
             .query_map(params![limit as i64, offset as i64], ChunkRow::from_row)?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// Return all chunks whose session_id starts with the given prefix.
+    pub fn chunks_by_session_prefix(&self, prefix: &str, limit: usize) -> Result<Vec<ChunkRow>> {
+        let escaped = prefix.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+        let pattern = format!("{}%", escaped);
+        let mut stmt = self.conn.prepare(
+            "SELECT c.id, c.session_id, s.project, s.scope,
+                    c.question, c.answer, c.timestamp
+             FROM chunks c
+             JOIN sessions s ON s.session_id = c.session_id
+             WHERE c.session_id LIKE ?1 ESCAPE '\\'
+             ORDER BY c.timestamp ASC
+             LIMIT ?2",
+        )?;
+
+        let rows = stmt
+            .query_map(params![pattern, limit as i64], ChunkRow::from_row)?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
     }

@@ -28,10 +28,14 @@ enum Commands {
     /// Search and recall related memories
     Recall {
         /// Search query
-        query: String,
+        #[arg(required_unless_present = "session", conflicts_with = "session")]
+        query: Option<String>,
         /// Project directory path
+        #[arg(long, required_unless_present = "session", conflicts_with = "session")]
+        project: Option<String>,
+        /// Look up chunks by session ID (full or prefix)
         #[arg(long)]
-        project: String,
+        session: Option<String>,
         /// Number of results to return
         #[arg(long, default_value = "5")]
         count: usize,

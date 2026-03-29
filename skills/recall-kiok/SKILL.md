@@ -3,7 +3,7 @@ name: recall-kiok
 description: Use whenever the user asks about previous sessions, past work, earlier decisions, work history, or needs context from prior conversations. Trigger on questions about what was done, how something was solved, what the reasoning was, what happened last time, or any reference to past session context. Also trigger on session ID patterns (UUIDs). Use when the answer likely comes from a past conversation rather than the current codebase or general knowledge.
 ---
 
-# kiok recall
+# recall-kiok
 
 Search past Claude Code session conversations stored in kiok's SQLite database with hybrid search (FTS5 trigram + RRF score fusion + time decay).
 
@@ -38,10 +38,10 @@ kiok uses FTS5 trigram + Ruri v3 (Japanese-optimized) vector search, so:
 
 ## Session ID lookup
 
-When the user provides a session ID (full or prefix), query the database directly for all chunks in that session:
+When the user provides a session ID (full or prefix):
 
 ```bash
-sqlite3 ~/.kiok/memory.db "SELECT session_id, question, answer FROM chunks WHERE session_id LIKE '<prefix>%' ORDER BY timestamp LIMIT 30;"
+kiok recall --session "<id-or-prefix>" --count 30
 ```
 
 ## Broad questions

@@ -14,8 +14,13 @@ pub fn run(command: crate::Commands) -> Result<()> {
         crate::Commands::Save { project } => {
             save::run(&project)
         }
-        crate::Commands::Recall { query, project, count } => {
-            recall::run(&query, &project, count)
+        crate::Commands::Recall { query, project, session, count } => {
+            if let Some(sid) = session {
+                recall::run_session(&sid, count)
+            } else {
+                // clap guarantees these are present when --session is absent.
+                recall::run(&query.unwrap(), &project.unwrap(), count)
+            }
         }
         crate::Commands::Embed => {
             embed::run()?;

@@ -27,8 +27,10 @@ Extract a short, focused query from the user's message and run:
 kiok recall "<query>" --project $PWD --count 10
 ```
 
-kiok uses FTS5 trigram matching, so:
+kiok uses FTS5 trigram + Ruri v3 (Japanese-optimized) vector search, so:
 
+- **Write queries in Japanese** — stored conversations are mostly in Japanese, and Ruri v3 performs best with Japanese input
+- Use English for code-specific terms (command names, library names, error messages)
 - Keep queries short (2-5 keywords work best)
 - Try the most specific terms first
 - If no results, broaden or rephrase the query

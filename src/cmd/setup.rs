@@ -3,6 +3,7 @@ use std::fs;
 use std::io::{self, BufRead, Write};
 
 use crate::db::Database;
+use crate::embed::ensure_ort_dylib;
 use super::save::{data_dir, db_path, model_dir};
 
 // ---------------------------------------------------------------------------
@@ -28,11 +29,22 @@ pub fn run() -> Result<()> {
 
     eprintln!("setup: model directory: {}", model_dir.display());
 
-    // --- 2. Download model files ---
+    // --- 2. Ensure ONNX Runtime is available ---
+    if let Some(path) = ensure_ort_dylib() {
+        eprintln!("setup: ONNX Runtime found at {}", path.display());
+    } else {
+        anyhow::bail!(
+            "ONNX Runtime not found.\n\n\
+             Install it before running setup:\n  \
+             https://github.com/microsoft/onnxruntime"
+        );
+    }
+
+    // --- 3. Download model files ---
     let rt = tokio::runtime::Runtime::new().context("Failed to create Tokio runtime")?;
     rt.block_on(download_model_files(&model_dir))?;
 
-    // --- 3. Initialize database ---
+    // --- 4. Initialize database ---
     let data = data_dir()?;
     fs::create_dir_all(&data)
         .with_context(|| format!("Could not create data directory {}", data.display()))?;
@@ -40,14 +52,14 @@ pub fn run() -> Result<()> {
     Database::open(&the_db_path).context("Failed to initialize database")?;
     eprintln!("setup: database initialized at {}", the_db_path.display());
 
-    // --- 4. Configure hooks in ~/.claude/settings.json ---
+    // --- 5. Configure hooks in ~/.claude/settings.json ---
     if confirm("\nAdd kiok hooks to ~/.claude/settings.json? [y/N] ")? {
         install_hooks()?;
     } else {
         print_hook_config()?;
     }
 
-    // --- 5. Optionally import existing sessions ---
+    // --- 6. Optionally import existing sessions ---
     let imported_chunks = if confirm("\nImport existing Claude Code sessions? [y/N] ")? {
         let db = Database::open(&the_db_path)?;
         let before = db.stats()?.chunks;
@@ -60,7 +72,7 @@ pub fn run() -> Result<()> {
         0
     };
 
-    // --- 6. Optionally embed imported chunks ---
+    // --- 7. Optionally embed imported chunks ---
     if imported_chunks > 0 {
         eprintln!(
             "\nNote: Embedding {} chunks with Ruri v3 may take several minutes\n\

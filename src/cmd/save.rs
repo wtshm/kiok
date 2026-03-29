@@ -132,9 +132,9 @@ pub fn run(project_path: &str) -> Result<()> {
             cmd.stderr(std::process::Stdio::null());
         }
 
-        // Propagate ORT_DYLIB_PATH so the child can find the ONNX Runtime dylib.
-        if let Some(dylib_path) = crate::embed::ensure_ort_dylib() {
-            cmd.env("ORT_DYLIB_PATH", dylib_path);
+        // Propagate ORT_DYLIB_PATH so the child can skip brew/pkg-config discovery.
+        if let Ok(p) = std::env::var("ORT_DYLIB_PATH") {
+            cmd.env("ORT_DYLIB_PATH", p);
         }
 
         // Reap the child in a background thread to prevent zombie accumulation.

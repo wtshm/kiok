@@ -33,7 +33,7 @@ SessionEnd Hook                      Skill (on demand)
 
 ## Requirements
 
-- [ONNX Runtime](https://github.com/microsoft/onnxruntime)
+- [ONNX Runtime](https://github.com/microsoft/onnxruntime) (runs Ruri v3 embedding model locally)
 
 ## Install
 

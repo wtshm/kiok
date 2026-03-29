@@ -14,7 +14,7 @@ case "$OS" in
       arm64)  TARGET="aarch64-apple-darwin" ;;
       x86_64) TARGET="x86_64-apple-darwin" ;;
       *)
-        echo "Error: unsupported architecture: $ARCH" >&2
+        echo "Error: unsupported architecture on $OS: $ARCH" >&2
         exit 1
         ;;
     esac
@@ -23,7 +23,7 @@ case "$OS" in
     case "$ARCH" in
       x86_64) TARGET="x86_64-unknown-linux-gnu" ;;
       *)
-        echo "Error: unsupported architecture: $ARCH" >&2
+        echo "Error: unsupported architecture on $OS: $ARCH" >&2
         exit 1
         ;;
     esac
@@ -33,24 +33,6 @@ case "$OS" in
     exit 1
     ;;
 esac
-
-# Check ONNX Runtime
-check_onnx() {
-  case "$OS" in
-    Darwin)
-      command -v brew >/dev/null 2>&1 && brew --prefix onnxruntime >/dev/null 2>&1
-      ;;
-    Linux)
-      pkg-config --exists libonnxruntime 2>/dev/null
-      ;;
-  esac
-}
-
-if ! check_onnx; then
-  echo "Error: ONNX Runtime not found. Install it first:" >&2
-  echo "  https://github.com/microsoft/onnxruntime" >&2
-  exit 1
-fi
 
 # Fetch latest release tag
 LATEST="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')"

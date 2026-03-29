@@ -31,23 +31,30 @@ SessionEnd Hook                      Skill (on demand)
 - **Web UI** — Built-in browser interface for browsing sessions and searching memories (`kiok view`)
 - **Skill integration** — Agent searches past sessions on demand via `recall-kiok` skill
 
-## Quick Start
+## Requirements
+
+- [ONNX Runtime](https://github.com/microsoft/onnxruntime)
+
+## Install
 
 ```bash
-# Build from source
-cargo build --release
+curl -fsSL https://raw.githubusercontent.com/wtshm/kiok/main/install.sh | sh
+```
 
-# Interactive setup: download model, configure hooks, import sessions, embed
+This installs the `kiok` binary to `~/.local/bin` and the `recall-kiok` Claude Code skill via `npx skills`.
+
+Then run the interactive setup:
+
+```bash
 kiok setup
+```
 
-# Search memories
-kiok recall "Docker configuration" --project $PWD
+### Build from Source
 
-# Browse memories in the browser
-kiok view
-
-# Database statistics
-kiok stats
+```bash
+cargo build --release
+cp target/release/kiok ~/.local/bin/
+npx skills install wtshm/kiok
 ```
 
 ## Hook Configuration

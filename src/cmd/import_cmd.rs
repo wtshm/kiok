@@ -128,21 +128,16 @@ pub fn run() -> Result<()> {
             }
         };
 
+        // NOTE: import uses "global" scope by default because the original
+        // project path is not available, and the policy file may not have
+        // existed when these historical sessions were created.
         if chunks.is_empty() {
-            // Still record the session so we don't revisit it.
-            // NOTE: import uses "global" scope by default because the original
-            // project path is not available, and the policy file may not have
-            // existed when these historical sessions were created.
             let _ = db.insert_session(&session_id, &project, "global", None);
             total_sessions += 1;
             pb.inc(1);
             continue;
         }
 
-        // Insert session + chunks.
-        // NOTE: import uses "global" scope by default because the original
-        // project path is not available, and the policy file may not have
-        // existed when these historical sessions were created.
         if let Err(e) = db.insert_session(&session_id, &project, "global", None) {
             eprintln!("import: failed to insert session {}: {}", session_id, e);
             errors += 1;

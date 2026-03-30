@@ -74,6 +74,10 @@ pub fn run() -> Result<EmbedOutcome> {
     }
 
     let pending_count = db.count_pending_embeddings()?;
+    if pending_count == 0 {
+        return Ok(EmbedOutcome::Done(0));
+    }
+
     let pb = ProgressBar::new(pending_count as u64);
     pb.set_style(
         ProgressStyle::default_bar()

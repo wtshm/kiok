@@ -81,7 +81,7 @@ pub fn run() -> Result<EmbedOutcome> {
     let pb = ProgressBar::new(pending_count as u64);
     pb.set_style(
         ProgressStyle::default_bar()
-            .template("      [{bar:40.cyan/blue}] {pos}/{len} chunks ({eta})")
+            .template("  [{bar:40.cyan/blue}] {pos}/{len} chunks ({eta})")
             .expect("invalid progress bar template")
             .progress_chars("#>-"),
     );
@@ -113,9 +113,5 @@ pub fn run() -> Result<EmbedOutcome> {
     }
 
     pb.finish_and_clear();
-
-    if total > 0 {
-        eprintln!("embed: processed {} chunks", total);
-    }
     Ok(EmbedOutcome::Done(total))
 }

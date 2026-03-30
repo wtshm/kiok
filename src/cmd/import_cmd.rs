@@ -11,15 +11,31 @@ use super::save::{data_dir, db_path};
 // Public API
 // ---------------------------------------------------------------------------
 
-/// Run the import command: scan ~/.claude/projects/ and insert all sessions
-/// that are not yet in the database.
+/// Import statistics returned by `run_quiet`.
+pub struct ImportStats {
+    pub chunks: usize,
+    pub sessions: usize,
+    pub skipped: usize,
+    pub errors: usize,
+}
+
+/// Run the import command with default output.
 pub fn run() -> Result<()> {
+    let stats = run_quiet()?;
+    println!(
+        "Imported {} chunks from {} sessions ({} skipped, {} errors)",
+        stats.chunks, stats.sessions, stats.skipped, stats.errors
+    );
+    Ok(())
+}
+
+/// Run the import command, returning statistics without printing a summary.
+pub fn run_quiet() -> Result<ImportStats> {
     let home = dirs::home_dir().context("Could not determine home directory")?;
     let projects_dir = home.join(".claude").join("projects");
 
     if !projects_dir.exists() {
-        eprintln!("import: no Claude projects directory found at {}", projects_dir.display());
-        return Ok(());
+        return Ok(ImportStats { chunks: 0, sessions: 0, skipped: 0, errors: 0 });
     }
 
     // Open / create the database.
@@ -71,7 +87,7 @@ pub fn run() -> Result<()> {
     let pb = ProgressBar::new(work_items.len() as u64);
     pb.set_style(
         ProgressStyle::default_bar()
-            .template("      [{bar:40.cyan/blue}] {pos}/{len} sessions")
+            .template("  [{bar:40.cyan/blue}] {pos}/{len} sessions")
             .expect("invalid progress bar template")
             .progress_chars("#>-"),
     );
@@ -171,12 +187,12 @@ pub fn run() -> Result<()> {
 
     pb.finish_and_clear();
 
-    println!(
-        "Imported {} chunks from {} sessions ({} skipped, {} errors)",
-        total_chunks, total_sessions, skipped, errors
-    );
-
-    Ok(())
+    Ok(ImportStats {
+        chunks: total_chunks,
+        sessions: total_sessions,
+        skipped,
+        errors,
+    })
 }
 
 // ---------------------------------------------------------------------------

@@ -36,19 +36,18 @@ pub fn run() -> Result<()> {
     // --- [1/5] Check ONNX Runtime ---
     eprintln!("[1/5] Checking ONNX Runtime...");
     if let Some(path) = ensure_ort_dylib() {
-        eprintln!("      found at {}", path.display());
+        eprintln!("  {}", path.display());
     } else {
         let install_hint = if cfg!(target_os = "macos") {
             "  brew install onnxruntime"
         } else if cfg!(target_os = "linux") {
-            "  sudo apt install libonnxruntime-dev   # Debian/Ubuntu\n  \
+            "  sudo apt install libonnxruntime-dev   # Debian/Ubuntu\n\
              # or download from https://github.com/microsoft/onnxruntime/releases"
         } else {
             "  https://github.com/microsoft/onnxruntime/releases"
         };
         anyhow::bail!(
-            "ONNX Runtime not found.\n\n\
-             Install it and run setup again:\n{}\n",
+            "ONNX Runtime not found.\n\nInstall it and run setup again:\n{}\n",
             install_hint
         );
     }
@@ -65,11 +64,11 @@ pub fn run() -> Result<()> {
         .with_context(|| format!("Could not create data directory {}", data.display()))?;
     let the_db_path = db_path()?;
     Database::open(&the_db_path).context("Failed to initialize database")?;
-    eprintln!("      initialized at {}", the_db_path.display());
+    eprintln!("  {}", the_db_path.display());
 
-    // --- [4/5] Configure hooks in ~/.claude/settings.json ---
+    // --- [4/5] Configure hooks ---
     eprintln!("[4/5] Configuring hooks...");
-    if confirm("      Add kiok hooks to ~/.claude/settings.json? [y/N] ")? {
+    if confirm("  Add kiok hooks to ~/.claude/settings.json? [y/N] ")? {
         install_hooks()?;
     } else {
         print_hook_config()?;
@@ -77,48 +76,42 @@ pub fn run() -> Result<()> {
 
     // --- [5/5] Import & embedding ---
     eprintln!("[5/5] Import & embedding...");
-    let imported_chunks = if confirm("      Import existing Claude Code sessions? [y/N] ")? {
-        let db = Database::open(&the_db_path)?;
-        let before = db.stats()?.chunks;
-        drop(db);
-        super::import_cmd::run()?;
-        let db = Database::open(&the_db_path)?;
-        let after = db.stats()?.chunks;
-        after - before
+    let imported_chunks = if confirm("  Import existing Claude Code sessions? [y/N] ")? {
+        let stats = super::import_cmd::run_quiet()?;
+        eprintln!(
+            "  Imported {} chunks from {} sessions ({} skipped)",
+            stats.chunks, stats.sessions, stats.skipped
+        );
+        stats.chunks
     } else {
         0
     };
 
     if imported_chunks > 0 {
         eprintln!(
-            "      Note: Embedding {} chunks with Ruri v3 may take several minutes depending on your machine.",
+            "  Embedding {} chunks may take several minutes depending on your machine.",
             imported_chunks
         );
-        if confirm("      Run embedding now? [y/N] ")? {
+        if confirm("  Run embedding now? [y/N] ")? {
             match super::embed::run()? {
                 super::embed::EmbedOutcome::Locked => {
-                    eprintln!("      another embed process is running. Run `kiok embed` later.");
+                    eprintln!("  Another embed process is running. Run `kiok embed` later.");
                 }
                 super::embed::EmbedOutcome::Unavailable => {
-                    eprintln!("      embedding model not available. Try `kiok embed` after verifying the model files.");
+                    eprintln!("  Embedding model not available. Try `kiok embed` after verifying the model files.");
                 }
                 super::embed::EmbedOutcome::Done(n) => {
-                    eprintln!("      embedded {} chunks.", n);
+                    eprintln!("  Embedded {} chunks.", n);
                 }
             }
         } else {
-            eprintln!("      Skipped. You can run `kiok embed` later to enable vector search.");
+            eprintln!("  Skipped. Run `kiok embed` later to enable vector search.");
         }
     }
 
     // --- Done ---
     eprintln!();
     eprintln!("Setup complete!");
-    eprintln!("  Database : {}", the_db_path.display());
-    if imported_chunks > 0 {
-        eprintln!("  Imported : {} chunks", imported_chunks);
-    }
-    eprintln!();
     eprintln!("kiok is ready. Memories will be saved automatically via hooks.");
 
     Ok(())
@@ -145,12 +138,12 @@ async fn download_model_files(model_dir: &std::path::Path) -> Result<()> {
         let dest = model_dir.join(local_name);
 
         if dest.exists() {
-            eprintln!("      {} already exists, skipping download", local_name);
+            eprintln!("  {} already exists, skipping", local_name);
             continue;
         }
 
         let url = format!("{}/{}", HF_BASE_URL, remote_path);
-        eprintln!("      downloading {} ...", local_name);
+        eprintln!("  {} ...", local_name);
 
         let response = client
             .get(&url)
@@ -171,7 +164,7 @@ async fn download_model_files(model_dir: &std::path::Path) -> Result<()> {
         let pb = ProgressBar::new(total_size);
         pb.set_style(
             ProgressStyle::default_bar()
-                .template("{spinner:.green} [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta})")
+                .template("  {spinner:.green} [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta})")
                 .expect("invalid progress bar template")
                 .progress_chars("#>-"),
         );
@@ -203,7 +196,7 @@ async fn download_model_files(model_dir: &std::path::Path) -> Result<()> {
         }
         result?;
 
-        eprintln!("      saved {}", dest.display());
+        eprintln!("  {}", dest.display());
     }
 
     Ok(())
@@ -286,10 +279,10 @@ fn install_hooks() -> Result<()> {
         .with_context(|| format!("Could not write {}", settings_path.display()))?;
 
     if !added.is_empty() {
-        eprintln!("      added hooks: {}", added.join(", "));
+        eprintln!("  Added hooks: {}", added.join(", "));
     }
     if !skipped.is_empty() {
-        eprintln!("      already configured: {}", skipped.join(", "));
+        eprintln!("  Already configured: {}", skipped.join(", "));
     }
 
     Ok(())

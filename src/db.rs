@@ -297,6 +297,19 @@ impl Database {
         Ok(Some(self.conn.last_insert_rowid()))
     }
 
+    /// Count chunks that have no corresponding embedding yet.
+    pub fn count_pending_embeddings(&self) -> Result<usize> {
+        let count: i64 = self.conn.query_row(
+            "SELECT COUNT(*)
+             FROM chunks c
+             LEFT JOIN chunks_vec cv ON cv.chunk_id = c.id
+             WHERE cv.chunk_id IS NULL",
+            [],
+            |row| row.get(0),
+        ).context("Failed to count pending embeddings")?;
+        Ok(count as usize)
+    }
+
     /// Return chunks that have no corresponding embedding yet, up to `limit`.
     pub fn chunks_without_embeddings(&self, limit: usize) -> Result<Vec<ChunkRow>> {
         let mut stmt = self.conn.prepare(

@@ -2,6 +2,7 @@ use std::fs::OpenOptions;
 use std::os::unix::io::AsRawFd;
 
 use anyhow::Result;
+use indicatif::{ProgressBar, ProgressStyle};
 
 use crate::db::Database;
 use crate::embed::{self, EmbeddingBackend};
@@ -72,6 +73,15 @@ pub fn run() -> Result<EmbedOutcome> {
         eprintln!("embed: cleaned up {} orphaned embeddings", orphaned);
     }
 
+    let pending_count = db.count_pending_embeddings()?;
+    let pb = ProgressBar::new(pending_count as u64);
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("      [{bar:40.cyan/blue}] {pos}/{len} chunks ({eta})")
+            .expect("invalid progress bar template")
+            .progress_chars("#>-"),
+    );
+
     let mut total = 0usize;
     loop {
         let pending = db.chunks_without_embeddings(BATCH_SIZE)?;
@@ -92,10 +102,13 @@ pub fn run() -> Result<EmbedOutcome> {
             for (chunk, embedding) in pending.iter().zip(embeddings.iter()) {
                 db.insert_embedding(chunk.chunk_id, embedding)?;
                 total += 1;
+                pb.inc(1);
             }
             Ok(())
         })?;
     }
+
+    pb.finish_and_clear();
 
     if total > 0 {
         eprintln!("embed: processed {} chunks", total);

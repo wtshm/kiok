@@ -1,4 +1,6 @@
 use anyhow::{Context, Result};
+use futures_util::StreamExt;
+use indicatif::{ProgressBar, ProgressStyle};
 use std::fs;
 use std::io::{self, BufRead, Write};
 
@@ -27,11 +29,10 @@ pub fn run() -> Result<()> {
     fs::create_dir_all(&model_dir)
         .with_context(|| format!("Could not create model directory {}", model_dir.display()))?;
 
-    eprintln!("setup: model directory: {}", model_dir.display());
-
-    // --- 2. Ensure ONNX Runtime is available ---
+    // --- [1/5] Check ONNX Runtime ---
+    eprintln!("[1/5] Checking ONNX Runtime...");
     if let Some(path) = ensure_ort_dylib() {
-        eprintln!("setup: ONNX Runtime found at {}", path.display());
+        eprintln!("      found at {}", path.display());
     } else {
         anyhow::bail!(
             "ONNX Runtime not found.\n\n\
@@ -40,27 +41,31 @@ pub fn run() -> Result<()> {
         );
     }
 
-    // --- 3. Download model files ---
+    // --- [2/5] Download model files ---
+    eprintln!("[2/5] Downloading model files...");
     let rt = tokio::runtime::Runtime::new().context("Failed to create Tokio runtime")?;
     rt.block_on(download_model_files(&model_dir))?;
 
-    // --- 4. Initialize database ---
+    // --- [3/5] Initialize database ---
+    eprintln!("[3/5] Initializing database...");
     let data = data_dir()?;
     fs::create_dir_all(&data)
         .with_context(|| format!("Could not create data directory {}", data.display()))?;
     let the_db_path = db_path()?;
     Database::open(&the_db_path).context("Failed to initialize database")?;
-    eprintln!("setup: database initialized at {}", the_db_path.display());
+    eprintln!("      initialized at {}", the_db_path.display());
 
-    // --- 5. Configure hooks in ~/.claude/settings.json ---
-    if confirm("\nAdd kiok hooks to ~/.claude/settings.json? [y/N] ")? {
+    // --- [4/5] Configure hooks in ~/.claude/settings.json ---
+    eprintln!("[4/5] Configuring hooks...");
+    if confirm("      Add kiok hooks to ~/.claude/settings.json? [y/N] ")? {
         install_hooks()?;
     } else {
         print_hook_config()?;
     }
 
-    // --- 6. Optionally import existing sessions ---
-    let imported_chunks = if confirm("\nImport existing Claude Code sessions? [y/N] ")? {
+    // --- [5/5] Import & embedding ---
+    eprintln!("[5/5] Import & embedding...");
+    let imported_chunks = if confirm("      Import existing Claude Code sessions? [y/N] ")? {
         let db = Database::open(&the_db_path)?;
         let before = db.stats()?.chunks;
         drop(db);
@@ -72,27 +77,26 @@ pub fn run() -> Result<()> {
         0
     };
 
-    // --- 7. Optionally embed imported chunks ---
     if imported_chunks > 0 {
         eprintln!(
-            "\nNote: Embedding {} chunks with Ruri v3 may take several minutes\n\
+            "      Note: Embedding {} chunks with Ruri v3 may take several minutes\n\
              depending on your machine (estimated ~0.8s per chunk on CPU).",
             imported_chunks
         );
-        if confirm("Run embedding now? [y/N] ")? {
+        if confirm("      Run embedding now? [y/N] ")? {
             match super::embed::run()? {
                 super::embed::EmbedOutcome::Locked => {
-                    eprintln!("setup: another embed process is running. Run `kiok embed` later.");
+                    eprintln!("      another embed process is running. Run `kiok embed` later.");
                 }
                 super::embed::EmbedOutcome::Unavailable => {
-                    eprintln!("setup: embedding model not available. Run `kiok setup` first.");
+                    eprintln!("      embedding model not available. Run `kiok setup` first.");
                 }
                 super::embed::EmbedOutcome::Done(n) => {
-                    eprintln!("setup: embedded {} chunks.", n);
+                    eprintln!("      embedded {} chunks.", n);
                 }
             }
         } else {
-            eprintln!("Skipped. You can run `kiok embed` later to enable vector search.");
+            eprintln!("      Skipped. You can run `kiok embed` later to enable vector search.");
         }
     }
 
@@ -120,12 +124,12 @@ async fn download_model_files(model_dir: &std::path::Path) -> Result<()> {
         let dest = model_dir.join(filename);
 
         if dest.exists() {
-            eprintln!("setup: {} already exists, skipping download", filename);
+            eprintln!("      {} already exists, skipping download", filename);
             continue;
         }
 
         let url = format!("{}/{}", HF_BASE_URL, filename);
-        eprintln!("setup: downloading {} ...", url);
+        eprintln!("      downloading {} ...", url);
 
         let response = client
             .get(&url)
@@ -141,17 +145,30 @@ async fn download_model_files(model_dir: &std::path::Path) -> Result<()> {
             ));
         }
 
-        let bytes = response
-            .bytes()
-            .await
-            .with_context(|| format!("Failed to read response body for {}", filename))?;
+        let total_size = response.content_length().unwrap_or(0);
+
+        let pb = ProgressBar::new(total_size);
+        pb.set_style(
+            ProgressStyle::default_bar()
+                .template("{spinner:.green} [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta})")
+                .expect("invalid progress bar template")
+                .progress_chars("#>-"),
+        );
 
         let mut file = fs::File::create(&dest)
             .with_context(|| format!("Could not create file {}", dest.display()))?;
-        file.write_all(&bytes)
-            .with_context(|| format!("Could not write to {}", dest.display()))?;
 
-        eprintln!("setup: saved {} ({} bytes)", dest.display(), bytes.len());
+        let mut stream = response.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk
+                .with_context(|| format!("Error reading stream for {}", filename))?;
+            file.write_all(&chunk)
+                .with_context(|| format!("Could not write to {}", dest.display()))?;
+            pb.inc(chunk.len() as u64);
+        }
+
+        pb.finish_with_message("done");
+        eprintln!("      saved {}", dest.display());
     }
 
     Ok(())
@@ -234,10 +251,10 @@ fn install_hooks() -> Result<()> {
         .with_context(|| format!("Could not write {}", settings_path.display()))?;
 
     if !added.is_empty() {
-        eprintln!("setup: added hooks: {}", added.join(", "));
+        eprintln!("      added hooks: {}", added.join(", "));
     }
     if !skipped.is_empty() {
-        eprintln!("setup: already configured: {}", skipped.join(", "));
+        eprintln!("      already configured: {}", skipped.join(", "));
     }
 
     Ok(())

@@ -34,10 +34,18 @@ pub fn run() -> Result<()> {
     if let Some(path) = ensure_ort_dylib() {
         eprintln!("      found at {}", path.display());
     } else {
+        let install_hint = if cfg!(target_os = "macos") {
+            "  brew install onnxruntime"
+        } else if cfg!(target_os = "linux") {
+            "  sudo apt install libonnxruntime-dev   # Debian/Ubuntu\n  \
+             # or download from https://github.com/microsoft/onnxruntime/releases"
+        } else {
+            "  https://github.com/microsoft/onnxruntime/releases"
+        };
         anyhow::bail!(
             "ONNX Runtime not found.\n\n\
-             Install it before running setup:\n  \
-             https://github.com/microsoft/onnxruntime"
+             Install it and run setup again:\n{}\n",
+            install_hint
         );
     }
 
@@ -89,7 +97,7 @@ pub fn run() -> Result<()> {
                     eprintln!("      another embed process is running. Run `kiok embed` later.");
                 }
                 super::embed::EmbedOutcome::Unavailable => {
-                    eprintln!("      embedding model not available. Run `kiok setup` first.");
+                    eprintln!("      embedding model not available. Try `kiok embed` after verifying the model files.");
                 }
                 super::embed::EmbedOutcome::Done(n) => {
                     eprintln!("      embedded {} chunks.", n);
@@ -99,6 +107,16 @@ pub fn run() -> Result<()> {
             eprintln!("      Skipped. You can run `kiok embed` later to enable vector search.");
         }
     }
+
+    // --- Done ---
+    eprintln!();
+    eprintln!("Setup complete!");
+    eprintln!("  Database : {}", the_db_path.display());
+    if imported_chunks > 0 {
+        eprintln!("  Imported : {} chunks", imported_chunks);
+    }
+    eprintln!();
+    eprintln!("kiok is ready. Memories will be saved automatically via hooks.");
 
     Ok(())
 }

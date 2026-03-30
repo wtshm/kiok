@@ -104,6 +104,10 @@ kiok includes a Claude Code skill (`skills/recall-kiok/`) that lets the agent se
       tokenizer.json
 ```
 
+## Acknowledgments
+
+- [Ruri v3](https://huggingface.co/cl-nagoya/ruri-v3-310m) — Japanese text embedding model by [cl-nagoya](https://huggingface.co/cl-nagoya). kiok uses the [ONNX-exported variant](https://huggingface.co/sirasagi62/ruri-v3-310m-ONNX) by [sirasagi62](https://huggingface.co/sirasagi62).
+
 ## License
 
 MIT

@@ -13,9 +13,13 @@ use super::save::{data_dir, db_path, model_dir};
 // ---------------------------------------------------------------------------
 
 const HF_BASE_URL: &str =
-    "https://huggingface.co/keitokei1994/ruri-v3-310m-onnx/resolve/main";
+    "https://huggingface.co/sirasagi62/ruri-v3-310m-ONNX/resolve/main";
 
-const MODEL_FILES: &[&str] = &["model.onnx", "tokenizer.json"];
+/// (remote_path, local_filename) pairs for model download.
+const MODEL_FILES: &[(&str, &str)] = &[
+    ("onnx/model.onnx", "model.onnx"),
+    ("tokenizer.json", "tokenizer.json"),
+];
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -87,8 +91,7 @@ pub fn run() -> Result<()> {
 
     if imported_chunks > 0 {
         eprintln!(
-            "      Note: Embedding {} chunks with Ruri v3 may take several minutes\n\
-             depending on your machine (estimated ~0.8s per chunk on CPU).",
+            "      Note: Embedding {} chunks with Ruri v3 may take several minutes depending on your machine.",
             imported_chunks
         );
         if confirm("      Run embedding now? [y/N] ")? {
@@ -138,16 +141,16 @@ fn confirm(prompt: &str) -> Result<bool> {
 async fn download_model_files(model_dir: &std::path::Path) -> Result<()> {
     let client = reqwest::Client::new();
 
-    for filename in MODEL_FILES {
-        let dest = model_dir.join(filename);
+    for &(remote_path, local_name) in MODEL_FILES {
+        let dest = model_dir.join(local_name);
 
         if dest.exists() {
-            eprintln!("      {} already exists, skipping download", filename);
+            eprintln!("      {} already exists, skipping download", local_name);
             continue;
         }
 
-        let url = format!("{}/{}", HF_BASE_URL, filename);
-        eprintln!("      downloading {} ...", url);
+        let url = format!("{}/{}", HF_BASE_URL, remote_path);
+        eprintln!("      downloading {} ...", local_name);
 
         let response = client
             .get(&url)
@@ -173,7 +176,7 @@ async fn download_model_files(model_dir: &std::path::Path) -> Result<()> {
                 .progress_chars("#>-"),
         );
 
-        let part_path = model_dir.join(format!("{}.part", filename));
+        let part_path = model_dir.join(format!("{}.part", local_name));
         let mut file = fs::File::create(&part_path)
             .with_context(|| format!("Could not create temp file {}", part_path.display()))?;
 
@@ -181,7 +184,7 @@ async fn download_model_files(model_dir: &std::path::Path) -> Result<()> {
             let mut stream = response.bytes_stream();
             while let Some(chunk) = stream.next().await {
                 let chunk = chunk
-                    .with_context(|| format!("Error reading stream for {}", filename))?;
+                    .with_context(|| format!("Error reading stream for {}", local_name))?;
                 file.write_all(&chunk)
                     .with_context(|| format!("Could not write to {}", part_path.display()))?;
                 pb.inc(chunk.len() as u64);

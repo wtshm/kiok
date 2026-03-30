@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use indicatif::{ProgressBar, ProgressStyle};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -32,10 +33,11 @@ pub fn run() -> Result<()> {
     let mut skipped = 0usize;
     let mut errors = 0usize;
 
-    // Iterate over project subdirectories.
+    // First pass: collect all (project_name, jsonl_path) pairs.
     let project_entries = fs::read_dir(&projects_dir)
         .with_context(|| format!("Could not read {}", projects_dir.display()))?;
 
+    let mut work_items: Vec<(String, PathBuf)> = Vec::new();
     for entry in project_entries {
         let entry = match entry {
             Ok(e) => e,
@@ -60,97 +62,119 @@ pub fn run() -> Result<()> {
         let project = decode_project_name(&encoded_name);
 
         // Find all JSONL files (including subagent subdirs).
-        let jsonl_files = find_jsonl_files(&project_dir);
+        for jsonl_path in find_jsonl_files(&project_dir) {
+            work_items.push((project.clone(), jsonl_path));
+        }
+    }
 
-        for jsonl_path in jsonl_files {
-            let session_id = match jsonl_path
-                .file_stem()
-                .and_then(|s| s.to_str())
-            {
-                Some(s) => s.to_owned(),
-                None => {
-                    eprintln!("import: could not extract session_id from {}", jsonl_path.display());
-                    errors += 1;
-                    continue;
-                }
-            };
+    // Create a progress bar sized to the total number of sessions.
+    let pb = ProgressBar::new(work_items.len() as u64);
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("      [{bar:40.cyan/blue}] {pos}/{len} sessions")
+            .expect("invalid progress bar template")
+            .progress_chars("#>-"),
+    );
 
-            // Skip already-imported sessions.
-            match db.session_exists(&session_id) {
-                Ok(true) => {
-                    skipped += 1;
-                    continue;
-                }
-                Ok(false) => {}
-                Err(e) => {
-                    eprintln!("import: DB error for session {}: {}", session_id, e);
-                    errors += 1;
-                    continue;
-                }
-            }
-
-            // Parse + chunk the session.
-            let content = match fs::read_to_string(&jsonl_path) {
-                Ok(c) => c,
-                Err(e) => {
-                    eprintln!("import: could not read {}: {}", jsonl_path.display(), e);
-                    errors += 1;
-                    continue;
-                }
-            };
-
-            let chunks = match chunk::parse_session(&content) {
-                Ok(c) => c,
-                Err(e) => {
-                    eprintln!("import: parse error for {}: {}", jsonl_path.display(), e);
-                    errors += 1;
-                    continue;
-                }
-            };
-
-            if chunks.is_empty() {
-                // Still record the session so we don't revisit it.
-                // NOTE: import uses "global" scope by default because the original
-                // project path is not available, and the policy file may not have
-                // existed when these historical sessions were created.
-                let _ = db.insert_session(&session_id, &project, "global", None);
-                total_sessions += 1;
+    // Second pass: process each work item and increment the progress bar.
+    for (project, jsonl_path) in work_items {
+        let session_id = match jsonl_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+        {
+            Some(s) => s.to_owned(),
+            None => {
+                eprintln!("import: could not extract session_id from {}", jsonl_path.display());
+                errors += 1;
+                pb.inc(1);
                 continue;
             }
+        };
 
-            // Insert session + chunks.
+        // Skip already-imported sessions.
+        match db.session_exists(&session_id) {
+            Ok(true) => {
+                skipped += 1;
+                pb.inc(1);
+                continue;
+            }
+            Ok(false) => {}
+            Err(e) => {
+                eprintln!("import: DB error for session {}: {}", session_id, e);
+                errors += 1;
+                pb.inc(1);
+                continue;
+            }
+        }
+
+        // Parse + chunk the session.
+        let content = match fs::read_to_string(&jsonl_path) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("import: could not read {}: {}", jsonl_path.display(), e);
+                errors += 1;
+                pb.inc(1);
+                continue;
+            }
+        };
+
+        let chunks = match chunk::parse_session(&content) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("import: parse error for {}: {}", jsonl_path.display(), e);
+                errors += 1;
+                pb.inc(1);
+                continue;
+            }
+        };
+
+        if chunks.is_empty() {
+            // Still record the session so we don't revisit it.
             // NOTE: import uses "global" scope by default because the original
             // project path is not available, and the policy file may not have
             // existed when these historical sessions were created.
-            if let Err(e) = db.insert_session(&session_id, &project, "global", None) {
-                eprintln!("import: failed to insert session {}: {}", session_id, e);
-                errors += 1;
-                continue;
-            }
+            let _ = db.insert_session(&session_id, &project, "global", None);
+            total_sessions += 1;
+            pb.inc(1);
+            continue;
+        }
 
-            let mut inserted_count = 0usize;
-            for c in &chunks {
-                match db.insert_chunk(
-                    &session_id,
-                    c.uuid.as_deref(),
-                    &c.question,
-                    &c.answer,
-                    c.timestamp.as_deref(),
-                    None,
-                ) {
-                    Ok(Some(_)) => inserted_count += 1,
-                    Ok(None) => {}
-                    Err(e) => {
-                        eprintln!("import: failed to insert chunk: {}", e);
-                        errors += 1;
-                    }
+        // Insert session + chunks.
+        // NOTE: import uses "global" scope by default because the original
+        // project path is not available, and the policy file may not have
+        // existed when these historical sessions were created.
+        if let Err(e) = db.insert_session(&session_id, &project, "global", None) {
+            eprintln!("import: failed to insert session {}: {}", session_id, e);
+            errors += 1;
+            pb.inc(1);
+            continue;
+        }
+
+        let mut inserted_count = 0usize;
+        for c in &chunks {
+            match db.insert_chunk(
+                &session_id,
+                c.uuid.as_deref(),
+                &c.question,
+                &c.answer,
+                c.timestamp.as_deref(),
+                None,
+            ) {
+                Ok(Some(_)) => inserted_count += 1,
+                Ok(None) => {}
+                Err(e) => {
+                    eprintln!("import: failed to insert chunk: {}", e);
+                    errors += 1;
                 }
             }
-
-            total_chunks += inserted_count;
-            total_sessions += 1;
         }
+
+        total_chunks += inserted_count;
+        total_sessions += 1;
+        pb.inc(1);
     }
+
+    pb.finish_and_clear();
 
     println!(
         "Imported {} chunks from {} sessions ({} skipped, {} errors)",

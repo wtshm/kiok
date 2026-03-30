@@ -21,6 +21,8 @@ bytemuck = "1"
 libc = "0.2"
 tokio = { version = "1", features = ["full"] }
 reqwest = { version = "0.12", features = ["stream"] }
+indicatif = "0.17"
+futures-util = "0.3"
 axum = "0.8"
 open = "5"
 

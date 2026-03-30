@@ -155,19 +155,33 @@ async fn download_model_files(model_dir: &std::path::Path) -> Result<()> {
                 .progress_chars("#>-"),
         );
 
-        let mut file = fs::File::create(&dest)
-            .with_context(|| format!("Could not create file {}", dest.display()))?;
+        let part_path = model_dir.join(format!("{}.part", filename));
+        let mut file = fs::File::create(&part_path)
+            .with_context(|| format!("Could not create temp file {}", part_path.display()))?;
 
-        let mut stream = response.bytes_stream();
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk
-                .with_context(|| format!("Error reading stream for {}", filename))?;
-            file.write_all(&chunk)
-                .with_context(|| format!("Could not write to {}", dest.display()))?;
-            pb.inc(chunk.len() as u64);
+        let result: Result<()> = async {
+            let mut stream = response.bytes_stream();
+            while let Some(chunk) = stream.next().await {
+                let chunk = chunk
+                    .with_context(|| format!("Error reading stream for {}", filename))?;
+                file.write_all(&chunk)
+                    .with_context(|| format!("Could not write to {}", part_path.display()))?;
+                pb.inc(chunk.len() as u64);
+            }
+            drop(file);
+            fs::rename(&part_path, &dest)
+                .with_context(|| format!("Could not rename {} to {}", part_path.display(), dest.display()))?;
+            Ok(())
         }
+        .await;
 
-        pb.finish_with_message("done");
+        pb.finish_and_clear();
+
+        if result.is_err() {
+            let _ = fs::remove_file(&part_path);
+        }
+        result?;
+
         eprintln!("      saved {}", dest.display());
     }
 
